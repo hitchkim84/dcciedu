@@ -100,20 +100,18 @@
                     </div>
                 </div>
 
-                <div class="bg-white rounded-xl shadow-lg border border-gray-100 hover:shadow-2xl transition-all duration-300 cursor-pointer group flex flex-col h-full"
-                    onclick="showPage('list-fta')">
+                <div class="bg-white rounded-xl shadow-lg border border-gray-100 hover:shadow-2xl transition-all duration-300 flex flex-col h-full">
                     <div
                         class="h-40 sm:h-48 bg-white flex items-center justify-center rounded-t-xl relative overflow-hidden flex-shrink-0">
                         <img src="https://www.fta.go.kr/kr/images/daegu/logo_daegu_change.gif" alt="대구 FTA 활용지원센터 로고"
                             class="w-full h-full object-cover">
                     </div>
                     <div class="p-6 sm:p-8 text-center flex flex-col flex-grow relative">
-                        <h3 class="text-xl sm:text-2xl font-bold text-gray-900 mb-2 tracking-tight mt-2 sm:mt-4">FTA 실무
-                            교육</h3>
+                        <h3 class="text-xl sm:text-2xl font-bold text-gray-900 mb-2 tracking-tight mt-2 sm:mt-4">FTA원산지 아카데미</h3>
                         <p class="text-sm sm:text-base text-gray-500 mb-6 sm:mb-8 font-normal flex-grow">원산지 관리, 통관 실무
                         </p>
-                        <span
-                            class="inline-block w-full px-4 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors mt-auto">교육과정보기</span>
+                        <a href="https://www.ftaedu.or.kr/" target="_blank"
+                            class="inline-block w-full px-4 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors mt-auto">교육과정보기</a>
                     </div>
                 </div>
             </div>
@@ -349,7 +347,7 @@
 
     <script>
         // ★★★ Vercel 배포용 프록시 URL ★★★
-        const scriptURL = '/api/proxy';
+        const scriptURL = 'https://dcci-edu.vercel.app/api/proxy';
 
         let courseData = {};
         const loadingSpinner = document.getElementById('loading-spinner');
