@@ -38,7 +38,7 @@
     </style>
 </head>
 
-<body class="bg-gray-50 text-gray-800">
+<body class="bg-gray-50 text-gray-800 flex flex-col min-h-screen">
 
     <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between">
@@ -52,7 +52,7 @@
         </div>
     </header>
 
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+    <main class="flex-grow w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
 
         <div id="page-main">
 
@@ -266,6 +266,22 @@
         </div>
     </main>
 
+    <footer class="bg-gray-100 border-t border-gray-200 py-8 sm:py-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center md:items-start justify-between">
+            <div class="flex items-center mb-6 md:mb-0">
+                <img src="dcci_new_logo.png" alt="대구상공회의소 로고" class="h-8 sm:h-10 opacity-80 grayscale">
+            </div>
+            <div class="text-center md:text-left text-xs sm:text-sm text-gray-500 font-medium">
+                <p class="mb-2 break-keep">
+                    <span>(우,41260) 대구광역시 동구 동대구로 457 (신천동)</span>
+                    <span class="hidden sm:inline mx-2">|</span>
+                    <span class="block sm:inline mt-1 sm:mt-0">TEL : 053-222-3000</span>
+                </p>
+                <p>Copyright(C) 2026 Daegu Chamber of Commerce & Industry. All Rights Reserved.</p>
+            </div>
+        </div>
+    </footer>
+
     <div id="applicationModal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title"
         role="dialog" aria-modal="true">
         <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
@@ -400,6 +416,7 @@
                     }).sort((a, b) => {
                         // 날짜 문자열 파싱 (예: "2026. 1. 7(수) 14:00~16:00" -> 2026-01-07)
                         const parseDate = (str) => {
+                            if (!str) return new Date(9999, 11, 31);
                             try {
                                 const parts = str.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
                                 if (parts) return new Date(`${parts[1]}-${parts[2]}-${parts[3]}`);
@@ -453,7 +470,7 @@
                         </div>
                     </div>`;
 
-                if (item.category.includes('FTA')) {
+                if (item.category && item.category.includes('FTA')) {
                     ftaList.innerHTML += cardHTML;
                     hasFta = true;
                 } else {
@@ -475,9 +492,9 @@
             Object.keys(courseData).forEach(id => {
                 const item = courseData[id];
                 let month = "일정";
-                let dateOnly = item.date;
+                let dateOnly = item.date || "일정 미정";
 
-                if (item.date.includes('.')) {
+                if (item.date && item.date.includes('.')) {
                     const parts = item.date.split('.');
                     if (parts.length >= 3) {
                         month = parts[1].trim() + "월";
@@ -485,7 +502,7 @@
                         dateOnly = `${parts[0]}. ${parts[1]}. ${dayPart}`;
                     }
                 }
-                else if (item.date.includes('월')) {
+                else if (item.date && item.date.includes('월')) {
                     const match = item.date.match(/(\d+)월/);
                     if (match) month = match[1] + "월";
                     dateOnly = item.date.split('~')[0];
