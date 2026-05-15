@@ -532,6 +532,37 @@
 
             Object.keys(courseData).forEach(id => {
                 const item = courseData[id];
+                
+                // 마감/종료 여부 체크
+                let isClosed = false;
+                const cap = parseInt(item.capacity || 0);
+                const cur = parseInt(item.current || 0);
+                
+                // 1. 정원 초과 체크
+                if (cap > 0 && cur >= cap) isClosed = true;
+                
+                // 2. 신청 기한 체크
+                if (!isClosed && item.deadline) {
+                    const deadlineDate = new Date(item.deadline);
+                    deadlineDate.setHours(23, 59, 59, 999);
+                    if (now > deadlineDate) isClosed = true;
+                }
+
+                // 3. 교육 일자 체크 (이미 지난 교육은 제외)
+                if (!isClosed && item.date) {
+                    try {
+                        const parts = item.date.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
+                        if (parts) {
+                            const eduDate = new Date(`${parts[1]}-${parts[2]}-${parts[3]}`);
+                            eduDate.setHours(23, 59, 59, 999);
+                            if (now > eduDate) isClosed = true;
+                        }
+                    } catch(e) {}
+                }
+
+                // 마감된 과정은 메인화면 표에서 제외
+                if (isClosed) return;
+
                 let month = "일정";
                 let dateOnly = item.date || "일정 미정";
 
@@ -549,17 +580,7 @@
                     dateOnly = item.date.split('~')[0];
                 }
 
-                let statusBadge = `<span class="px-2 bg-green-100 text-green-800 text-xs font-bold rounded-full">접수중</span>`;
-                const cap = parseInt(item.capacity || 0);
-                const cur = parseInt(item.current || 0);
-                let isFull = false;
-
-                if (cap > 0 && cur >= cap) { isFull = true; statusBadge = `<span class="px-2 bg-gray-200 text-gray-500 text-xs font-bold rounded-full">신청마감</span>`; }
-                if (!isFull && item.deadline) {
-                    const deadlineDate = new Date(item.deadline);
-                    deadlineDate.setHours(23, 59, 59, 999);
-                    if (now > deadlineDate) { statusBadge = `<span class="px-2 bg-gray-200 text-gray-500 text-xs font-bold rounded-full">신청마감</span>`; }
-                }
+                const statusBadge = `<span class="px-2 bg-green-100 text-green-800 text-xs font-bold rounded-full">접수중</span>`;
 
                 const tr = `
                     <tr class="hover:bg-gray-50 cursor-pointer transition-colors" onclick="loadDetail('${id}')">
