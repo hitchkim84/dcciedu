@@ -377,129 +377,154 @@
     </div>
 
     <script>
-        // ★★★ Vercel 배포용 프록시 URL ★★★
+        /**
+         * [설정] Vercel 배포용 프록시 URL
+         */
         const scriptURL = '/api/proxy';
-
         let courseData = {};
+
         const loadingSpinner = document.getElementById('loading-spinner');
         const scheduleBody = document.getElementById('schedule-body');
 
-        // [핵심] 자동 하이픈 생성 함수 (하나로 통합)
-        function autoHyphen(target, type) {
-            let value = target.value.replace(/[^0-9]/g, ''); // 숫자 이외의 문자 제거
-            let result = '';
-
-            if (type === 'biz') {
-                if (value.length < 4) { result = value; }
-                else if (value.length < 6) { result = value.substr(0, 3) + '-' + value.substr(3); }
-                else if (value.length < 11) { result = value.substr(0, 3) + '-' + value.substr(3, 2) + '-' + value.substr(5); }
-                else { result = value.substr(0, 3) + '-' + value.substr(3, 2) + '-' + value.substr(5); }
-            } else if (type === 'phone') {
-                if (value.length < 4) { result = value; }
-                else if (value.length < 7) { result = value.substr(0, 3) + '-' + value.substr(3); }
-                else if (value.length < 11) { result = value.substr(0, 3) + '-' + value.substr(3, 3) + '-' + value.substr(6); }
-                else { result = value.substr(0, 3) + '-' + value.substr(3, 4) + '-' + value.substr(7); }
-            }
-            target.value = result;
+        /**
+         * [유틸리티] 날짜 문자열 파싱 (예: "2026. 1. 7(수)" -> Date 객체)
+         */
+        function parseEduDate(dateStr) {
+            if (!dateStr) return new Date(9999, 11, 31);
+            try {
+                const parts = dateStr.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
+                if (parts) {
+                    const d = new Date(`${parts[1]}-${parts[2]}-${parts[3]}`);
+                    d.setHours(23, 59, 59, 999);
+                    return d;
+                }
+            } catch (e) { console.error("Date parse error:", e); }
+            return new Date(9999, 11, 31);
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            history.replaceState({ page: 'main' }, '', '');
-            fetchCourses();
-        });
+        /**
+         * [유틸리티] 과정 상태 통합 판별 (마감여부, 완료여부 등)
+         */
+        function getCourseStatus(item) {
+            const now = new Date();
+            const eduDate = parseEduDate(item.date);
+            const cap = parseInt(item.capacity || 0);
+            const cur = parseInt(item.current || 0);
+            
+            // 1. 교육 종료 여부 (날짜 지남)
+            const isEnded = now > eduDate;
+            
+            // 2. 신청 마감 여부 (정원초과 또는 기한만료)
+            let isClosed = isEnded;
+            if (cap > 0 && cur >= cap) isClosed = true; // 정원 초과
+            if (!isClosed && item.deadline) {
+                const deadlineDate = new Date(item.deadline);
+                deadlineDate.setHours(23, 59, 59, 999);
+                if (now > deadlineDate) isClosed = true; // 기한 만료
+            }
 
-        window.addEventListener('popstate', function (event) {
-            const pageId = event.state && event.state.page ? event.state.page : 'main';
-            showPage(pageId, false);
-        });
+            return { isEnded, isClosed, cap, cur };
+        }
 
-        function fetchCourses() {
+        /**
+         * [유틸리티] 자동 하이픈 생성 (사업자번호, 전화번호)
+         */
+        function autoHyphen(target, type) {
+            let v = target.value.replace(/[^0-9]/g, '');
+            let r = '';
+            if (type === 'biz') {
+                if (v.length < 4) r = v;
+                else if (v.length < 6) r = v.substr(0, 3) + '-' + v.substr(3);
+                else r = v.substr(0, 3) + '-' + v.substr(3, 2) + '-' + v.substr(5);
+            } else if (type === 'phone') {
+                if (v.length < 4) r = v;
+                else if (v.length < 7) r = v.substr(0, 3) + '-' + v.substr(3);
+                else if (v.length < 11) r = v.substr(0, 3) + '-' + v.substr(3, 3) + '-' + v.substr(6);
+                else r = v.substr(0, 3) + '-' + v.substr(3, 4) + '-' + v.substr(7);
+            }
+            target.value = r;
+        }
+
+        /**
+         * [데이터] 교육 과정 데이터 불러오기 및 정렬
+         */
+        async function fetchCourses() {
             loadingSpinner.classList.remove('hidden');
             scheduleBody.innerHTML = '';
 
-            fetch(scriptURL + '?type=public')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.result === 'error') {
-                        loadingSpinner.innerHTML = `<p class="text-red-500 font-bold">오류: ${data.msg}</p>`;
-                        return;
-                    }
+            // [로컬 검사용 데이터] localhost 접속 시에만 나타납니다.
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                const mockData = {
+                    "test_local": { category: "실무자 역량강화 교육", title: "★로컬 미리보기: 분리된 시트 연동 테스트★", date: "2026. 12. 31(목)", place: "대구상공회의소", capacity: 50, current: 5 }
+                };
+                courseData = mockData;
+                renderAll();
+                loadingSpinner.classList.add('hidden');
+                return;
+            }
 
-                    // [정렬 로직 추가] 날짜순 오름차순 정렬
-                    const sortedArray = Object.keys(data).map(key => {
-                        return { id: key, ...data[key] };
-                    }).sort((a, b) => {
-                        // 날짜 문자열 파싱 (예: "2026. 1. 7(수) 14:00~16:00" -> 2026-01-07)
-                        const parseDate = (str) => {
-                            if (!str) return new Date(9999, 11, 31);
-                            try {
-                                const parts = str.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
-                                if (parts) return new Date(`${parts[1]}-${parts[2]}-${parts[3]}`);
-                                return new Date(9999, 11, 31); // 파싱 실패시 뒤로
-                            } catch (e) { return new Date(9999, 11, 31); }
-                        };
-                        return parseDate(a.date) - parseDate(b.date);
-                    });
+            try {
+                const response = await fetch(scriptURL + '?type=public');
+                const data = await response.json();
 
-                    // 정렬된 배열을 다시 객체나 순서대로 렌더링하기 위해 전역 변수는 그대로 두고 렌더링 함수에 정렬된 키 전달
-                    courseData = {};
-                    sortedArray.forEach(item => {
-                        courseData[item.id] = item;
-                    });
+                if (data.result === 'error') throw new Error(data.msg);
 
-                    renderLists();
-                    renderSchedule();
-                    loadingSpinner.classList.add('hidden');
-                })
-                .catch(error => {
-                    console.error("Error:", error);
-                    loadingSpinner.innerHTML = `<p class="text-red-500 font-bold">일정을 불러오지 못했습니다.<br><span class="text-sm font-normal text-gray-500">(관리자: 구글 앱스 스크립트 '권한 설정'을 확인하세요)</span></p>`;
-                });
+                // 날짜순 정렬 후 객체화
+                const sorted = Object.keys(data)
+                    .map(key => ({ id: key, ...data[key] }))
+                    .sort((a, b) => parseEduDate(a.date) - parseEduDate(b.date));
+
+                courseData = {};
+                sorted.forEach(item => { courseData[item.id] = item; });
+
+                renderAll();
+                loadingSpinner.classList.add('hidden');
+            } catch (error) {
+                console.error("Fetch Error:", error);
+                loadingSpinner.innerHTML = `<p class="text-red-500 font-bold">오류: 데이터를 불러올 수 없습니다.</p>`;
+            }
         }
 
-        function renderLists() {
-            const compActive = document.querySelector('#grid-comp-active');
-            const compCompleted = document.querySelector('#grid-comp-completed');
-            const ftaActive = document.querySelector('#grid-fta-active');
-            const ftaCompleted = document.querySelector('#grid-fta-completed');
-            
-            compActive.innerHTML = ''; compCompleted.innerHTML = '';
-            ftaActive.innerHTML = ''; ftaCompleted.innerHTML = '';
+        /**
+         * [렌더링] 전체 화면 그리기 통합
+         */
+        function renderAll() {
+            renderLists();
+            renderSchedule();
+        }
 
+        /**
+         * [렌더링] 카테고리별 목록 (실무자/FTA)
+         */
+        function renderLists() {
+            const grids = {
+                compActive: document.querySelector('#grid-comp-active'),
+                compCompleted: document.querySelector('#grid-comp-completed'),
+                ftaActive: document.querySelector('#grid-fta-active'),
+                ftaCompleted: document.querySelector('#grid-fta-completed')
+            };
+            
+            Object.values(grids).forEach(g => g.innerHTML = '');
             let counts = { compActive: 0, compCompleted: 0, ftaActive: 0, ftaCompleted: 0 };
-            const now = new Date();
 
             Object.keys(courseData).forEach(id => {
                 const item = courseData[id];
+                const { isEnded, isClosed } = getCourseStatus(item);
                 
-                // 완료 여부 판단 (교육 날짜 기준)
-                let isCompleted = false;
-                if (item.date) {
-                    try {
-                        const parts = item.date.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
-                        if (parts) {
-                            const eduDate = new Date(`${parts[1]}-${parts[2]}-${parts[3]}`);
-                            eduDate.setHours(23, 59, 59, 999);
-                            if (now > eduDate) isCompleted = true;
-                        }
-                    } catch(e) {}
-                }
-
-                // 버튼 텍스트 설정
-                const btnText = isCompleted ? '종료된 과정입니다' : '상세보기 &rarr;';
-                const btnClass = isCompleted 
+                const btnText = isEnded ? '종료된 과정입니다' : '상세보기 &rarr;';
+                const btnClass = isEnded 
                     ? 'mt-auto w-full py-2 bg-gray-100 text-gray-400 rounded-lg font-bold cursor-not-allowed'
                     : 'mt-auto w-full py-2 border border-blue-600 text-blue-600 rounded-lg font-bold hover:bg-blue-50 transition-colors';
 
                 const cardHTML = `
-                    <div class="bg-white rounded-xl shadow border border-gray-100 flex flex-col h-full ${!isCompleted ? 'hover:shadow-2xl transition-all duration-300' : ''}">
+                    <div class="bg-white rounded-xl shadow border border-gray-100 flex flex-col h-full ${!isEnded ? 'hover:shadow-2xl transition-all duration-300' : ''}">
                         <div class="bg-gray-50 px-6 py-4 border-b border-gray-100 flex-none flex justify-between items-center">
                             <span class="text-xs font-bold text-gray-800">${item.category}</span>
-                            ${isCompleted ? '<span class="px-2 py-0.5 bg-gray-200 text-gray-500 text-[10px] font-bold rounded">종료</span>' : '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded">진행중</span>'}
+                            <span class="px-2 py-0.5 ${isEnded ? 'bg-gray-200 text-gray-500' : 'bg-blue-100 text-blue-700'} text-[10px] font-bold rounded">${isEnded ? '종료' : '진행중'}</span>
                         </div>
                         <div class="p-6 flex flex-col flex-grow">
                             <h3 class="text-xl font-bold text-gray-900 mb-2 tracking-tight break-keep">${item.title}</h3>
-                            <p class="text-gray-500 text-sm font-semibold ${isCompleted ? 'text-gray-400' : 'text-blue-900'}">${item.date}</p>
+                            <p class="${isEnded ? 'text-gray-400' : 'text-blue-900'} text-sm font-semibold">${item.date}</p>
                             <p class="text-gray-500 text-sm mb-6 mt-1 flex items-start font-medium">
                                 <svg class="w-4 h-4 mr-1 text-gray-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                                 <span class="break-keep">${item.place}</span>
@@ -508,91 +533,55 @@
                         </div>
                     </div>`;
 
-                if (item.category && item.category.includes('FTA')) {
-                    if (isCompleted) { ftaCompleted.innerHTML += cardHTML; counts.ftaCompleted++; }
-                    else { ftaActive.innerHTML += cardHTML; counts.ftaActive++; }
-                } else {
-                    if (isCompleted) { compCompleted.innerHTML += cardHTML; counts.compCompleted++; }
-                    else { compActive.innerHTML += cardHTML; counts.compActive++; }
-                }
+                const type = (item.category || '').includes('FTA') ? 'fta' : 'comp';
+                const state = isEnded ? 'Completed' : 'Active';
+                const key = type + state;
+                
+                grids[key].innerHTML += cardHTML;
+                counts[key]++;
             });
 
-            const emptyActive = `<div class="col-span-1 md:col-span-2 lg:col-span-3 text-center py-10 text-gray-400 font-medium border border-dashed border-gray-200 rounded-xl">현재 접수중인 과정이 없습니다.</div>`;
-            const emptyCompleted = `<div class="col-span-1 md:col-span-2 lg:col-span-3 text-center py-10 text-gray-400 font-medium border border-dashed border-gray-200 rounded-xl">종료된 과정이 없습니다.</div>`;
-
-            if (!counts.compActive) compActive.innerHTML = emptyActive;
-            if (!counts.compCompleted) compCompleted.innerHTML = emptyCompleted;
-            if (!counts.ftaActive) ftaActive.innerHTML = emptyActive;
-            if (!counts.ftaCompleted) ftaCompleted.innerHTML = emptyCompleted;
+            // 빈 목록 처리
+            const empty = (txt) => `<div class="col-span-1 md:col-span-2 lg:col-span-3 text-center py-10 text-gray-400 font-medium border border-dashed border-gray-200 rounded-xl">${txt}</div>`;
+            if (!counts.compActive) grids.compActive.innerHTML = empty("현재 접수중인 과정이 없습니다.");
+            if (!counts.compCompleted) grids.compCompleted.innerHTML = empty("종료된 과정이 없습니다.");
+            if (!counts.ftaActive) grids.ftaActive.innerHTML = empty("현재 접수중인 과정이 없습니다.");
+            if (!counts.ftaCompleted) grids.ftaCompleted.innerHTML = empty("종료된 과정이 없습니다.");
         }
 
+        /**
+         * [렌더링] 메인 화면 월별 주요 일정 표
+         */
         function renderSchedule() {
             scheduleBody.innerHTML = '';
-            const now = new Date();
-
             Object.keys(courseData).forEach(id => {
                 const item = courseData[id];
+                const { isClosed } = getCourseStatus(item);
                 
-                // 마감/종료 여부 체크
-                let isClosed = false;
-                const cap = parseInt(item.capacity || 0);
-                const cur = parseInt(item.current || 0);
-                
-                // 1. 정원 초과 체크
-                if (cap > 0 && cur >= cap) isClosed = true;
-                
-                // 2. 신청 기한 체크
-                if (!isClosed && item.deadline) {
-                    const deadlineDate = new Date(item.deadline);
-                    deadlineDate.setHours(23, 59, 59, 999);
-                    if (now > deadlineDate) isClosed = true;
-                }
+                if (isClosed) return; // 마감/종료된 과정은 메인 표에서 제외
 
-                // 3. 교육 일자 체크 (이미 지난 교육은 제외)
-                if (!isClosed && item.date) {
-                    try {
-                        const parts = item.date.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
-                        if (parts) {
-                            const eduDate = new Date(`${parts[1]}-${parts[2]}-${parts[3]}`);
-                            eduDate.setHours(23, 59, 59, 999);
-                            if (now > eduDate) isClosed = true;
-                        }
-                    } catch(e) {}
-                }
-
-                // 마감된 과정은 메인화면 표에서 제외
-                if (isClosed) return;
-
-                let month = "일정";
-                let dateOnly = item.date || "일정 미정";
-
+                let month = "일정", dateOnly = item.date || "일정 미정";
                 if (item.date && item.date.includes('.')) {
-                    const parts = item.date.split('.');
-                    if (parts.length >= 3) {
-                        month = parts[1].trim() + "월";
-                        const dayPart = parts[2].split('(')[0].trim();
-                        dateOnly = `${parts[0]}. ${parts[1]}. ${dayPart}`;
+                    const p = item.date.split('.');
+                    if (p.length >= 3) {
+                        month = p[1].trim() + "월";
+                        dateOnly = `${p[0]}. ${p[1]}. ${p[2].split('(')[0].trim()}`;
                     }
                 }
-                else if (item.date && item.date.includes('월')) {
-                    const match = item.date.match(/(\d+)월/);
-                    if (match) month = match[1] + "월";
-                    dateOnly = item.date.split('~')[0];
-                }
 
-                const statusBadge = `<span class="px-2 bg-green-100 text-green-800 text-xs font-bold rounded-full">접수중</span>`;
-
-                const tr = `
+                scheduleBody.innerHTML += `
                     <tr class="hover:bg-gray-50 cursor-pointer transition-colors" onclick="loadDetail('${id}')">
                         <td class="px-4 py-3 font-bold text-gray-900 whitespace-nowrap">${month}</td>
                         <td class="px-4 py-3 text-gray-500 whitespace-nowrap font-medium">${dateOnly}</td>
                         <td class="px-4 py-3 text-gray-900 font-bold whitespace-nowrap">${item.title}</td>
-                        <td class="px-4 py-3 whitespace-nowrap">${statusBadge}</td>
+                        <td class="px-4 py-3 whitespace-nowrap"><span class="px-2 bg-green-100 text-green-800 text-xs font-bold rounded-full">접수중</span></td>
                     </tr>`;
-                scheduleBody.innerHTML += tr;
             });
         }
 
+        /**
+         * [페이지] 화면 전환 관리
+         */
         function showPage(pageId, addToHistory = true) {
             document.querySelectorAll('main > div').forEach(div => div.classList.add('hidden-page'));
             document.getElementById('page-' + pageId).classList.remove('hidden-page');
@@ -600,74 +589,58 @@
             if (addToHistory) history.pushState({ page: pageId }, '', '');
         }
 
+        /**
+         * [페이지] 교육 상세 정보 로드
+         */
         function loadDetail(courseId) {
             const data = courseData[courseId];
-            if (!data) return alert('정보 없음');
+            if (!data) return;
 
-            document.getElementById('detail-category').innerText = data.category;
-            document.getElementById('detail-title').innerText = data.title;
-            document.getElementById('detail-date').innerText = data.date;
-            document.getElementById('detail-place').innerText = data.place;
-            document.getElementById('detail-target').innerText = data.target;
-            document.getElementById('detail-goal').innerText = data.goal;
-            document.getElementById('detail-instructor').innerText = data.instructor;
-            document.getElementById('detail-content').innerText = data.content;
+            const { isClosed, cap, cur } = getCourseStatus(data);
+
+            // 필드 매핑
+            const fields = ['category', 'title', 'date', 'place', 'target', 'goal', 'instructor', 'content'];
+            fields.forEach(f => document.getElementById(`detail-${f}`).innerText = data[f] || '');
+            
             document.getElementById('detail-payment-info').innerText = data.paymentInfo || "무료 / 별도 문의";
-
-            const capacityEl = document.getElementById('detail-capacity');
-            const cap = parseInt(data.capacity || 0);
-            const cur = parseInt(data.current || 0);
-
-            if (cap > 0) { capacityEl.innerText = `신청 ${cur}명 / 정원 ${cap}명`; } else { capacityEl.innerText = "제한 없음"; }
-
-            let formattedDeadline = "별도 공지";
-            if (data.deadline) {
-                const dateObj = new Date(data.deadline);
-                if (!isNaN(dateObj)) {
-                    const year = dateObj.getFullYear();
-                    const month = dateObj.getMonth() + 1;
-                    const day = dateObj.getDate();
-                    const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-                    const dayName = dayNames[dateObj.getDay()];
-                    formattedDeadline = `${year}. ${month}. ${day}(${dayName})`;
-                } else { formattedDeadline = data.deadline; }
-            }
-            document.getElementById('detail-deadline').innerText = formattedDeadline;
             document.getElementById('detail-other-info').innerText = data.otherInfo || "없음";
             document.getElementById('detail-contact').innerText = data.contact || "기업지원부 통상진흥팀 (053-222-3109)";
+            document.getElementById('detail-capacity').innerText = cap > 0 ? `신청 ${cur}명 / 정원 ${cap}명` : "제한 없음";
 
-            const btnApply = document.getElementById('btn-apply');
-            btnApply.disabled = false;
-            btnApply.innerText = "신청하기";
-            btnApply.classList.remove('bg-gray-400', 'cursor-not-allowed');
-            btnApply.classList.add('bg-blue-900', 'hover:bg-blue-800', 'shadow-lg');
-            btnApply.onclick = openModalFromDetail;
-
+            // 신청 기한 포맷팅
+            let deadlineStr = "별도 공지";
             if (data.deadline) {
-                const deadlineDate = new Date(data.deadline);
-                deadlineDate.setHours(23, 59, 59, 999);
-                const now = new Date();
-                if (now > deadlineDate) { disableButton(btnApply, "신청 마감 (기한 경과)"); }
+                const d = new Date(data.deadline);
+                if (!isNaN(d)) {
+                    const days = ['일', '월', '화', '수', '목', '금', '토'];
+                    deadlineStr = `${d.getFullYear()}. ${d.getMonth()+1}. ${d.getDate()}(${days[d.getDay()]})`;
+                } else deadlineStr = data.deadline;
             }
-            if (cap > 0 && cur >= cap) { disableButton(btnApply, "신청 마감 (정원 초과)"); }
+            document.getElementById('detail-deadline').innerText = deadlineStr;
 
-            const prevPage = data.category.includes('FTA') ? 'list-fta' : 'list-competency';
-            document.getElementById('btn-back-list').setAttribute('onclick', `showPage('${prevPage}')`);
+            // 신청 버튼 상태 제어
+            const btn = document.getElementById('btn-apply');
+            btn.disabled = isClosed;
+            if (isClosed) {
+                btn.innerText = (cap > 0 && cur >= cap) ? "신청 마감 (정원 초과)" : "신청 마감 (기한 경과)";
+                btn.className = "w-full sm:w-auto px-10 py-4 bg-gray-400 text-white text-lg font-bold rounded-xl cursor-not-allowed";
+                btn.onclick = null;
+            } else {
+                btn.innerText = "신청하기";
+                btn.className = "w-full sm:w-auto px-10 py-4 bg-blue-900 text-white text-lg font-bold rounded-xl hover:bg-blue-800 shadow-lg transform hover:-translate-y-1 transition-all";
+                btn.onclick = openModalFromDetail;
+            }
 
+            const prev = data.category.includes('FTA') ? 'list-fta' : 'list-competency';
+            document.getElementById('btn-back-list').onclick = () => showPage(prev);
             showPage('detail');
         }
 
-        function disableButton(btn, text) {
-            btn.disabled = true;
-            btn.innerText = text;
-            btn.classList.remove('bg-blue-900', 'hover:bg-blue-800', 'shadow-lg');
-            btn.classList.add('bg-gray-400', 'cursor-not-allowed');
-            btn.onclick = null;
-        }
-
+        /**
+         * [신청] 모달 및 폼 제출
+         */
         function openModalFromDetail() {
-            const courseTitle = document.getElementById('detail-title').innerText;
-            document.getElementById('modalCourseTitle').value = courseTitle;
+            document.getElementById('modalCourseTitle').value = document.getElementById('detail-title').innerText;
             document.getElementById('applicationModal').classList.remove('hidden');
         }
 
@@ -676,48 +649,52 @@
             document.getElementById('applyForm').reset();
         }
 
-        function submitForm() {
+        async function submitForm() {
             const form = document.getElementById('applyForm');
-            if (!form.checkValidity()) { form.reportValidity(); return; }
+            if (!form.checkValidity()) return form.reportValidity();
 
             const btn = document.querySelector('button[onclick="submitForm()"]');
             const originalText = btn.innerText;
             btn.innerText = "접수 중...";
             btn.disabled = true;
 
-            const formData = new FormData();
-            formData.append('course', document.getElementById('modalCourseTitle').value);
-            formData.append('bizName', document.getElementById('bizName').value);
-            formData.append('bizNo', document.getElementById('bizNo').value);
-            formData.append('dept', document.getElementById('deptName').value);
-            formData.append('position', document.getElementById('position').value);
-            formData.append('name', document.getElementById('applicantName').value);
-            formData.append('phone', document.getElementById('phone').value);
-            formData.append('email', document.getElementById('email').value);
-
-            const privacyChecked = document.getElementById('privacy').checked;
-            formData.append('privacy', privacyChecked ? "동의함" : "미동의");
-
-            const data = new URLSearchParams(formData);
-
-            fetch(scriptURL + '?type=public', { method: 'POST', body: data })
-                .then(response => response.json())
-                .then(result => {
-                    if (result.result === 'success') {
-                        alert(`[신청 완료]\n정상적으로 접수되었습니다.\n담당자가 확인 후 문자로 안내해 드리겠습니다.`);
-                        closeModal();
-                    } else {
-                        alert('오류가 발생했습니다: ' + result.msg);
-                    }
-                    btn.innerText = originalText;
-                    btn.disabled = false;
-                })
-                .catch(error => {
-                    alert('서버 통신 오류가 발생했습니다.');
-                    btn.innerText = originalText;
-                    btn.disabled = false;
+            try {
+                const params = new URLSearchParams({
+                    course: document.getElementById('modalCourseTitle').value,
+                    bizName: document.getElementById('bizName').value,
+                    bizNo: document.getElementById('bizNo').value,
+                    dept: document.getElementById('deptName').value,
+                    position: document.getElementById('position').value,
+                    name: document.getElementById('applicantName').value,
+                    phone: document.getElementById('phone').value,
+                    email: document.getElementById('email').value,
+                    privacy: document.getElementById('privacy').checked ? "동의함" : "미동의"
                 });
+
+                const response = await fetch(scriptURL + '?type=public', { method: 'POST', body: params });
+                const result = await response.json();
+
+                if (result.result === 'success') {
+                    alert(`[신청 완료]\n정상적으로 접수되었습니다.\n담당자가 확인 후 문자로 안내해 드리겠습니다.`);
+                    closeModal();
+                } else throw new Error(result.msg);
+            } catch (e) {
+                alert('오류가 발생했습니다: ' + e.message);
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
         }
+
+        // 초기화
+        document.addEventListener('DOMContentLoaded', () => {
+            history.replaceState({ page: 'main' }, '', '');
+            fetchCourses();
+        });
+
+        window.addEventListener('popstate', (e) => {
+            showPage(e.state?.page || 'main', false);
+        });
     </script>
 </body>
 

@@ -297,7 +297,17 @@
         let cachedPassword = null; // 로그인한 비밀번호 저장
 
         // 초기 로드 시 자동 실행 방지 (로그인 대기)
-        // window.onload = function () { ... };
+        window.onload = function () {
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                document.getElementById('login-modal').classList.add('hidden');
+                document.getElementById('admin-content').classList.remove('hidden');
+                const testData = {
+                    "test_admin": { category: "실무자 역량강화 교육", title: "★관리자 로컬 미리보기 테스트★", date: "2026. 12. 31(목)", capacity: 40, current: 2, deadline: "2026-12-25" }
+                };
+                cachedPassword = "test";
+                renderStatusTable(testData, document.getElementById('status-body'));
+            }
+        };
 
         function tryLogin() {
             const pwdInput = document.getElementById('login-password');
@@ -421,9 +431,14 @@
         // --- 기능 2: 신청자 현황 조회 ---
         function fetchStatus() {
             const tbody = document.getElementById('status-body');
+            if (!cachedPassword) return; // 로그인 전이면 중단
+
             tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-10 text-center text-blue-600 font-bold"><span class="animate-pulse">데이터를 불러오는 중입니다...</span></td></tr>';
 
-            fetch(scriptURL + '?type=admin')
+            fetch(scriptURL + '?type=admin', {
+                method: 'GET',
+                headers: { 'x-admin-password': cachedPassword }
+            })
                 .then(response => response.json())
                 .then(data => renderStatusTable(data, tbody))
                 .catch(err => handleError(tbody, err));
@@ -495,6 +510,17 @@
         // --- 기능 3: 관리 (수정/삭제) ---
         function fetchManage() {
             const tbody = document.getElementById('manage-body');
+            
+            // [로컬 검사용 데이터]
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                const mockData = {
+                    "test_admin": { id: "test_admin", category: "실무자 역량강화 교육", title: "★관리자 로컬 미리보기 테스트★", date: "2026. 12. 31(목)" }
+                };
+                allCourses = mockData;
+                renderManageTable(mockData, tbody);
+                return;
+            }
+
             tbody.innerHTML = '<tr><td colspan="3" class="px-6 py-10 text-center text-blue-600 font-bold"><span class="animate-pulse">데이터를 불러오는 중입니다...</span></td></tr>';
 
             fetch(scriptURL + '?type=admin', {
