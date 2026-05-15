@@ -15,15 +15,15 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
-        /* 폰트 설정 (Noto Sans KR) */
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+        /* 폰트 설정 (Pretendard) */
+        @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
 
         body,
         button,
         input,
         select,
         textarea {
-            font-family: 'Noto Sans KR', sans-serif !important;
+            font-family: 'Pretendard', 'Noto Sans KR', sans-serif !important;
         }
 
         /* 페이지 전환용 클래스 */
@@ -44,7 +44,7 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between">
             <div class="flex items-center cursor-pointer" onclick="showPage('main')">
                 <img src="dcci_new_logo.png" alt="대구상공회의소 로고" class="h-8 sm:h-10 mr-2 sm:mr-3 flex-shrink-0">
-                <span class="text-lg sm:text-xl font-bold text-gray-800 tracking-tight whitespace-nowrap">교육센터</span>
+                <span class="text-xl sm:text-[22px] font-black text-[#0f3d7a] tracking-tighter whitespace-nowrap ml-1 sm:ml-2">교육센터</span>
             </div>
             <div class="text-xs sm:text-sm text-gray-500 font-medium text-right break-keep">
                 <span class="hidden sm:inline">문의: 대구상공회의소 </span>교육담당자<br class="sm:hidden"> (053-222-3109)
@@ -62,56 +62,55 @@
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 mb-12 sm:mb-16 items-stretch">
-                <div class="bg-white rounded-xl shadow-lg border border-gray-100 hover:shadow-2xl transition-all duration-300 cursor-pointer group flex flex-col h-full"
+                <!-- Card 1 -->
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 hover:shadow-2xl hover:border-blue-400 transition-all duration-300 transform hover:-translate-y-2 cursor-pointer group flex flex-col h-full overflow-hidden"
                     onclick="showPage('list-competency')">
-                    <div
-                        class="h-40 sm:h-48 bg-white flex items-center justify-center rounded-t-xl relative overflow-hidden flex-shrink-0">
-                        <img src="business_skills_up.png" alt="실무자 역량강화 교육" class="w-full h-full object-cover">
+                    <div class="relative w-full aspect-[16/9] bg-gray-50 flex items-center justify-center overflow-hidden border-b border-gray-100">
+                        <img src="business_skills_up.png" alt="실무자 역량강화 교육" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700">
+                        <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-5 transition-all duration-300"></div>
                     </div>
-                    <div class="p-6 sm:p-8 text-center flex flex-col flex-grow relative">
-                        <h3 class="text-xl sm:text-2xl font-bold text-gray-900 mb-2 tracking-tight mt-2 sm:mt-4">실무자
-                            역량강화 교육</h3>
-                        <p class="text-sm sm:text-base text-gray-500 mb-6 sm:mb-8 font-normal flex-grow">세무/회계, 인사/노무,
-                            경영일반 등
-                        </p>
-                        <span
-                            class="inline-block w-full px-4 py-3 bg-indigo-900 text-white rounded-lg font-bold hover:bg-indigo-800 transition-colors mt-auto">교육과정보기</span>
-                    </div>
-                </div>
-
-                <div
-                    class="bg-white rounded-xl shadow-lg border border-gray-100 hover:shadow-2xl transition-all duration-300 flex flex-col h-full">
-                    <div
-                        class="h-40 sm:h-48 bg-white flex items-center justify-center rounded-t-xl relative overflow-hidden flex-shrink-0">
-                        <img src="workai_logo.png" alt="WORK.AI 로고" class="w-full h-full object-cover">
-                    </div>
-                    <div class="p-6 sm:p-8 text-center flex flex-col flex-grow relative">
-                        <div class="absolute top-4 right-4">
-                            <span
-                                class="bg-sky-500 text-white text-xs px-2 py-1 rounded font-bold shadow-sm">환급과정</span>
+                    <div class="p-6 flex flex-col flex-grow relative bg-white">
+                        <h3 class="text-xl font-extrabold text-gray-900 mb-2 tracking-tight">실무자 역량강화 교육</h3>
+                        <p class="text-sm text-gray-500 mb-5 font-medium flex-grow">세무/회계, 인사/노무, 경영일반 등</p>
+                        <div class="flex items-center text-blue-700 font-bold text-sm mt-auto">
+                            교육과정보기 
+                            <svg class="w-4 h-4 ml-1 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
                         </div>
-                        <h3 class="text-xl sm:text-2xl font-bold text-gray-900 mb-2 tracking-tight mt-2 sm:mt-4">재직자 AI
-                            교육</h3>
-                        <p class="text-sm sm:text-base text-gray-500 mb-6 sm:mb-8 font-normal flex-grow">ChatGPT, 업무자동화
-                            등</p>
-                        <a href="https://dcci.korcham-workai.net/main/index.jsp" target="_blank"
-                            class="inline-block w-full px-4 py-3 bg-sky-500 text-white rounded-lg font-bold hover:bg-sky-600 transition-colors mt-auto">WORK.AI
-                            이동</a>
                     </div>
                 </div>
 
-                <div class="bg-white rounded-xl shadow-lg border border-gray-100 hover:shadow-2xl transition-all duration-300 flex flex-col h-full">
-                    <div
-                        class="h-40 sm:h-48 bg-white flex items-center justify-center rounded-t-xl relative overflow-hidden flex-shrink-0">
-                        <img src="FTA.png" alt="대구 FTA 활용지원센터 로고"
-                            class="w-full h-full object-cover">
+                <!-- Card 2 -->
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 hover:shadow-2xl hover:border-sky-400 transition-all duration-300 transform hover:-translate-y-2 group flex flex-col h-full overflow-hidden relative">
+                    <a href="https://dcci.korcham-workai.net/main/index.jsp" target="_blank" class="absolute inset-0 z-10"></a>
+                    <div class="relative w-full aspect-[16/9] bg-white flex items-center justify-center overflow-hidden border-b border-gray-100">
+                        <img src="workai2026.png" alt="WORK.AI 로고" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700">
                     </div>
-                    <div class="p-6 sm:p-8 text-center flex flex-col flex-grow relative">
-                        <h3 class="text-xl sm:text-2xl font-bold text-gray-900 mb-2 tracking-tight mt-2 sm:mt-4">FTA원산지 아카데미</h3>
-                        <p class="text-sm sm:text-base text-gray-500 mb-6 sm:mb-8 font-normal flex-grow">원산지 관리, 통관 실무
-                        </p>
-                        <a href="https://www.ftaedu.or.kr/" target="_blank"
-                            class="inline-block w-full px-4 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors mt-auto">교육과정보기</a>
+                    <div class="p-6 flex flex-col flex-grow relative bg-white">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-xl font-extrabold text-gray-900 tracking-tight">재직자 AI 교육</h3>
+                            <span class="bg-sky-500 text-white text-[11px] px-2 py-0.5 rounded font-bold shadow-sm flex-shrink-0 ml-2">환급과정</span>
+                        </div>
+                        <p class="text-sm text-gray-500 mb-5 font-medium flex-grow">ChatGPT, 업무자동화 등</p>
+                        <div class="flex items-center text-sky-600 font-bold text-sm mt-auto relative z-20">
+                            WORK.AI 이동 
+                            <svg class="w-4 h-4 ml-1 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 3 -->
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-200 hover:shadow-2xl hover:border-red-400 transition-all duration-300 transform hover:-translate-y-2 group flex flex-col h-full overflow-hidden relative">
+                    <a href="https://www.ftaedu.or.kr/" target="_blank" class="absolute inset-0 z-10"></a>
+                    <div class="relative w-full aspect-[16/9] bg-white flex items-center justify-center overflow-hidden border-b border-gray-100">
+                        <img src="FTA.png" alt="대구 FTA 활용지원센터 로고" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700">
+                    </div>
+                    <div class="p-6 flex flex-col flex-grow relative bg-white">
+                        <h3 class="text-xl font-extrabold text-gray-900 mb-2 tracking-tight">FTA원산지 아카데미</h3>
+                        <p class="text-sm text-gray-500 mb-5 font-medium flex-grow">원산지 관리, 통관 실무</p>
+                        <div class="flex items-center text-red-600 font-bold text-sm mt-auto relative z-20">
+                            FTA원산지 아카데미 이동 
+                            <svg class="w-4 h-4 ml-1 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -141,9 +140,6 @@
                                     과정명</th>
                                 <th
                                     class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                                    장소</th>
-                                <th
-                                    class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
                                     상태</th>
                             </tr>
                         </thead>
@@ -171,7 +167,11 @@
                     홈으로</button>
                 <h2 class="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">📂 실무자 역량강화 교육</h2>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"></div>
+            <h3 class="text-lg font-bold text-blue-800 mb-4 border-l-4 border-blue-800 pl-3">진행중인 과정</h3>
+            <div id="grid-comp-active" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12"></div>
+            
+            <h3 class="text-lg font-bold text-gray-500 mb-4 border-l-4 border-gray-400 pl-3">완료된 과정</h3>
+            <div id="grid-comp-completed" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 opacity-60"></div>
         </div>
         <div id="page-list-fta" class="hidden-page">
             <div class="flex items-center mb-8"><button onclick="showPage('main')"
@@ -179,7 +179,11 @@
                     홈으로</button>
                 <h2 class="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">🚢 FTA 실무 교육</h2>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"></div>
+            <h3 class="text-lg font-bold text-blue-800 mb-4 border-l-4 border-blue-800 pl-3">진행중인 과정</h3>
+            <div id="grid-fta-active" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12"></div>
+            
+            <h3 class="text-lg font-bold text-gray-500 mb-4 border-l-4 border-gray-400 pl-3">완료된 과정</h3>
+            <div id="grid-fta-completed" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 opacity-60"></div>
         </div>
 
         <div id="page-detail" class="hidden-page">
@@ -265,6 +269,17 @@
             </div>
         </div>
     </main>
+
+    <!-- Footer Menu Bar -->
+    <div class="bg-[#1e2b5e] text-gray-300 text-sm border-b border-[#141f47]">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-wrap justify-center md:justify-start gap-x-6 sm:gap-x-10 gap-y-2 font-medium">
+            <a href="#" class="hover:text-white transition-colors">이용약관</a>
+            <a href="#" class="hover:text-white transition-colors font-bold text-white">개인정보처리방침</a>
+            <a href="#" class="hover:text-white transition-colors">이메일무단수집거부</a>
+            <a href="#" class="hover:text-white transition-colors">환불규정</a>
+            <a href="#" class="hover:text-white transition-colors">찾아오시는길</a>
+        </div>
+    </div>
 
     <footer class="bg-gray-100 border-t border-gray-200 py-8 sm:py-12">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center md:items-start justify-between">
@@ -443,46 +458,72 @@
         }
 
         function renderLists() {
-            const compList = document.querySelector('#page-list-competency .grid');
-            const ftaList = document.querySelector('#page-list-fta .grid');
-            compList.innerHTML = ''; ftaList.innerHTML = '';
+            const compActive = document.querySelector('#grid-comp-active');
+            const compCompleted = document.querySelector('#grid-comp-completed');
+            const ftaActive = document.querySelector('#grid-fta-active');
+            const ftaCompleted = document.querySelector('#grid-fta-completed');
+            
+            compActive.innerHTML = ''; compCompleted.innerHTML = '';
+            ftaActive.innerHTML = ''; ftaCompleted.innerHTML = '';
 
-            let hasComp = false;
-            let hasFta = false;
+            let counts = { compActive: 0, compCompleted: 0, ftaActive: 0, ftaCompleted: 0 };
+            const now = new Date();
 
             Object.keys(courseData).forEach(id => {
                 const item = courseData[id];
+                
+                // 완료 여부 판단 (교육 날짜 기준)
+                let isCompleted = false;
+                if (item.date) {
+                    try {
+                        const parts = item.date.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
+                        if (parts) {
+                            const eduDate = new Date(`${parts[1]}-${parts[2]}-${parts[3]}`);
+                            eduDate.setHours(23, 59, 59, 999);
+                            if (now > eduDate) isCompleted = true;
+                        }
+                    } catch(e) {}
+                }
 
-                // 카드에 메인 이미지가 없다면 기본 이미지 사용, 있다면 교체 가능
+                // 버튼 텍스트 설정
+                const btnText = isCompleted ? '종료된 과정입니다' : '상세보기 &rarr;';
+                const btnClass = isCompleted 
+                    ? 'mt-auto w-full py-2 bg-gray-100 text-gray-400 rounded-lg font-bold cursor-not-allowed'
+                    : 'mt-auto w-full py-2 border border-blue-600 text-blue-600 rounded-lg font-bold hover:bg-blue-50 transition-colors';
+
                 const cardHTML = `
-                    <div class="bg-white rounded-xl shadow border border-gray-100 flex flex-col h-full hover:shadow-2xl transition-all duration-300">
-                        <div class="bg-gray-50 px-6 py-4 border-b border-gray-100 flex-none">
+                    <div class="bg-white rounded-xl shadow border border-gray-100 flex flex-col h-full ${!isCompleted ? 'hover:shadow-2xl transition-all duration-300' : ''}">
+                        <div class="bg-gray-50 px-6 py-4 border-b border-gray-100 flex-none flex justify-between items-center">
                             <span class="text-xs font-bold text-gray-800">${item.category}</span>
+                            ${isCompleted ? '<span class="px-2 py-0.5 bg-gray-200 text-gray-500 text-[10px] font-bold rounded">종료</span>' : '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded">진행중</span>'}
                         </div>
                         <div class="p-6 flex flex-col flex-grow">
                             <h3 class="text-xl font-bold text-gray-900 mb-2 tracking-tight break-keep">${item.title}</h3>
-                            <p class="text-gray-500 text-sm font-semibold text-blue-900">${item.date}</p>
+                            <p class="text-gray-500 text-sm font-semibold ${isCompleted ? 'text-gray-400' : 'text-blue-900'}">${item.date}</p>
                             <p class="text-gray-500 text-sm mb-6 mt-1 flex items-start font-medium">
                                 <svg class="w-4 h-4 mr-1 text-gray-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                                 <span class="break-keep">${item.place}</span>
                             </p>
-                            <button onclick="loadDetail('${id}')" class="mt-auto w-full py-2 border border-blue-600 text-blue-600 rounded-lg font-bold hover:bg-blue-50 transition-colors">상세보기 &rarr;</button>
+                            <button onclick="loadDetail('${id}')" class="${btnClass}">${btnText}</button>
                         </div>
                     </div>`;
 
                 if (item.category && item.category.includes('FTA')) {
-                    ftaList.innerHTML += cardHTML;
-                    hasFta = true;
+                    if (isCompleted) { ftaCompleted.innerHTML += cardHTML; counts.ftaCompleted++; }
+                    else { ftaActive.innerHTML += cardHTML; counts.ftaActive++; }
                 } else {
-                    compList.innerHTML += cardHTML;
-                    hasComp = true;
+                    if (isCompleted) { compCompleted.innerHTML += cardHTML; counts.compCompleted++; }
+                    else { compActive.innerHTML += cardHTML; counts.compActive++; }
                 }
             });
 
-            const emptyMsg = `<div class="col-span-1 md:col-span-2 lg:col-span-3 text-center py-20 text-gray-400 font-medium">현재 준비된 교육 과정이 없습니다.<br>추후 일정이 업데이트될 예정입니다.</div>`;
+            const emptyActive = `<div class="col-span-1 md:col-span-2 lg:col-span-3 text-center py-10 text-gray-400 font-medium border border-dashed border-gray-200 rounded-xl">현재 접수중인 과정이 없습니다.</div>`;
+            const emptyCompleted = `<div class="col-span-1 md:col-span-2 lg:col-span-3 text-center py-10 text-gray-400 font-medium border border-dashed border-gray-200 rounded-xl">종료된 과정이 없습니다.</div>`;
 
-            if (!hasComp) compList.innerHTML = emptyMsg;
-            if (!hasFta) ftaList.innerHTML = emptyMsg;
+            if (!counts.compActive) compActive.innerHTML = emptyActive;
+            if (!counts.compCompleted) compCompleted.innerHTML = emptyCompleted;
+            if (!counts.ftaActive) ftaActive.innerHTML = emptyActive;
+            if (!counts.ftaCompleted) ftaCompleted.innerHTML = emptyCompleted;
         }
 
         function renderSchedule() {
@@ -525,7 +566,6 @@
                         <td class="px-4 py-3 font-bold text-gray-900 whitespace-nowrap">${month}</td>
                         <td class="px-4 py-3 text-gray-500 whitespace-nowrap font-medium">${dateOnly}</td>
                         <td class="px-4 py-3 text-gray-900 font-bold whitespace-nowrap">${item.title}</td>
-                        <td class="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">${item.place}</td>
                         <td class="px-4 py-3 whitespace-nowrap">${statusBadge}</td>
                     </tr>`;
                 scheduleBody.innerHTML += tr;
