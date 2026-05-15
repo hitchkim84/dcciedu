@@ -132,10 +132,18 @@
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label class="block text-sm font-bold text-gray-700 mb-1">일시 (Date Text)</label>
-                            <input type="text" id="date" required
-                                class="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500"
-                                placeholder="예: 2025. 3. 14(목) 14:00~18:00">
+                            <label class="block text-sm font-bold text-gray-700 mb-1">교육 일시 (Date & Time)</label>
+                            <div class="flex flex-wrap gap-2">
+                                <input type="date" id="input-date-day" required
+                                    class="flex-1 min-w-[150px] border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500">
+                                <input type="time" id="input-date-start" required
+                                    class="w-24 border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500">
+                                <span class="flex items-center text-gray-500">~</span>
+                                <input type="time" id="input-date-end" required
+                                    class="w-24 border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <!-- 기존 date 필드는 숨겨서 로직 호환성 유지 -->
+                            <input type="hidden" id="date">
                         </div>
                         <div>
                             <label class="block text-sm font-bold text-gray-700 mb-1">장소 (Place)</label>
@@ -297,17 +305,7 @@
         let cachedPassword = null; // 로그인한 비밀번호 저장
 
         // 초기 로드 시 자동 실행 방지 (로그인 대기)
-        window.onload = function () {
-            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                document.getElementById('login-modal').classList.add('hidden');
-                document.getElementById('admin-content').classList.remove('hidden');
-                const testData = {
-                    "test_admin": { category: "실무자 역량강화 교육", title: "★관리자 로컬 미리보기 테스트★", date: "2026. 12. 31(목)", capacity: 40, current: 2, deadline: "2026-12-25" }
-                };
-                cachedPassword = "test";
-                renderStatusTable(testData, document.getElementById('status-body'));
-            }
-        };
+        // window.onload = function () { ... };
 
         function tryLogin() {
             const pwdInput = document.getElementById('login-password');
@@ -371,12 +369,35 @@
         }
 
         // --- 기능 1: 과정 등록/수정 ---
+        function updateDateFromInputs() {
+            const day = document.getElementById('input-date-day').value;
+            const start = document.getElementById('input-date-start').value;
+            const end = document.getElementById('input-date-end').value;
+
+            if (!day || !start || !end) return false;
+
+            const dateObj = new Date(day);
+            const week = ['일', '월', '화', '수', '목', '금', '토'];
+            const dayOfWeek = week[dateObj.getDay()];
+            
+            // YYYY-MM-DD -> YYYY. M. D
+            const parts = day.split('-');
+            const formattedDate = `${parts[0]}. ${parseInt(parts[1])}. ${parseInt(parts[2])}(${dayOfWeek}) ${start}~${end}`;
+            document.getElementById('date').value = formattedDate;
+            return true;
+        }
+
         function submitCourse() {
             const btn = document.getElementById('btn-submit');
             const originalText = btn.innerText;
             const pwd = cachedPassword; // 저장된 비밀번호 사용
 
             if (!pwd) return alert('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
+
+            // 일시 통합 업데이트
+            if (!updateDateFromInputs()) {
+                return alert('교육 일시(날짜, 시작시간, 종료시간)를 모두 입력해주세요.');
+            }
 
             const actionType = editingCourseId ? "수정" : "등록";
             if (!confirm(`이대로 교육 과정을 ${actionType}하시겠습니까?`)) return;
@@ -511,16 +532,6 @@
         function fetchManage() {
             const tbody = document.getElementById('manage-body');
             
-            // [로컬 검사용 데이터]
-            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                const mockData = {
-                    "test_admin": { id: "test_admin", category: "실무자 역량강화 교육", title: "★관리자 로컬 미리보기 테스트★", date: "2026. 12. 31(목)" }
-                };
-                allCourses = mockData;
-                renderManageTable(mockData, tbody);
-                return;
-            }
-
             tbody.innerHTML = '<tr><td colspan="3" class="px-6 py-10 text-center text-blue-600 font-bold"><span class="animate-pulse">데이터를 불러오는 중입니다...</span></td></tr>';
 
             fetch(scriptURL + '?type=admin', {
@@ -588,6 +599,27 @@
             document.getElementById('contact').value = data.contact;
             document.getElementById('paymentInfo').value = data.paymentInfo;
             document.getElementById('otherInfo').value = data.otherInfo;
+
+            // 일시(date) 필드 파싱해서 개별 입력란에 채우기
+            // 예: "2025. 3. 14(목) 14:00~18:00"
+            try {
+                const dateText = data.date;
+                const datePart = dateText.match(/(\d{4})[\.\s]+(\d{1,2})[\.\s]+(\d{1,2})/);
+                const timePart = dateText.match(/(\d{2}:\d{2})~(\d{2}:\d{2})/);
+                
+                if (datePart) {
+                    const y = datePart[1];
+                    const m = datePart[2].padStart(2, '0');
+                    const d = datePart[3].padStart(2, '0');
+                    document.getElementById('input-date-day').value = `${y}-${m}-${d}`;
+                }
+                if (timePart) {
+                    document.getElementById('input-date-start').value = timePart[1];
+                    document.getElementById('input-date-end').value = timePart[2];
+                }
+            } catch (e) {
+                console.error("일시 파싱 실패:", e);
+            }
 
             // UI 변경
             document.getElementById('edit-header').classList.remove('hidden');

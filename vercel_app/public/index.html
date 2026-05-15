@@ -452,17 +452,6 @@
             loadingSpinner.classList.remove('hidden');
             scheduleBody.innerHTML = '';
 
-            // [로컬 검사용 데이터] localhost 접속 시에만 나타납니다.
-            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                const mockData = {
-                    "test_local": { category: "실무자 역량강화 교육", title: "★로컬 미리보기: 분리된 시트 연동 테스트★", date: "2026. 12. 31(목)", place: "대구상공회의소", capacity: 50, current: 5 }
-                };
-                courseData = mockData;
-                renderAll();
-                loadingSpinner.classList.add('hidden');
-                return;
-            }
-
             try {
                 const response = await fetch(scriptURL + '?type=public');
                 const data = await response.json();
