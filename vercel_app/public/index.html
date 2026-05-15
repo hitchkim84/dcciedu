@@ -123,15 +123,12 @@
                             d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z">
                         </path>
                     </svg>
-                    월별 주요 교육 일정
+                    교육일정
                 </h2>
                 <div class="overflow-x-auto relative scrolling-touch">
                     <table class="min-w-full divide-y divide-gray-200 whitespace-nowrap">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th
-                                    class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                                    월</th>
                                 <th
                                     class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
                                     일자</th>
@@ -452,6 +449,17 @@
             loadingSpinner.classList.remove('hidden');
             scheduleBody.innerHTML = '';
 
+            // [로컬 검사용 데이터]
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                const mockData = {
+                    "test_local": { category: "실무자 역량강화 교육", title: "★표 구조 변경 완료 테스트★", date: "2026. 12. 31(목) 14:00~18:00", place: "대구상공회의소", capacity: 50, current: 5 }
+                };
+                courseData = mockData;
+                renderAll();
+                loadingSpinner.classList.add('hidden');
+                return;
+            }
+
             try {
                 const response = await fetch(scriptURL + '?type=public');
                 const data = await response.json();
@@ -549,19 +557,9 @@
                 
                 if (isClosed) return; // 마감/종료된 과정은 메인 표에서 제외
 
-                let month = "일정", dateOnly = item.date || "일정 미정";
-                if (item.date && item.date.includes('.')) {
-                    const p = item.date.split('.');
-                    if (p.length >= 3) {
-                        month = p[1].trim() + "월";
-                        dateOnly = `${p[0]}. ${p[1]}. ${p[2].split('(')[0].trim()}`;
-                    }
-                }
-
                 scheduleBody.innerHTML += `
                     <tr class="hover:bg-gray-50 cursor-pointer transition-colors" onclick="loadDetail('${id}')">
-                        <td class="px-4 py-3 font-bold text-gray-900 whitespace-nowrap">${month}</td>
-                        <td class="px-4 py-3 text-gray-500 whitespace-nowrap font-medium">${dateOnly}</td>
+                        <td class="px-4 py-3 text-gray-500 whitespace-nowrap font-medium">${item.date || "일정 미정"}</td>
                         <td class="px-4 py-3 text-gray-900 font-bold whitespace-nowrap">${item.title}</td>
                         <td class="px-4 py-3 whitespace-nowrap"><span class="px-2 bg-green-100 text-green-800 text-xs font-bold rounded-full">접수중</span></td>
                     </tr>`;
