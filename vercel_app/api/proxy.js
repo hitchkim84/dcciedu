@@ -3,8 +3,15 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
 
-// Initialize Supabase client
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Initialize Supabase client safely
+let supabase = null;
+if (supabaseUrl && supabaseKey) {
+  try {
+    supabase = createClient(supabaseUrl, supabaseKey);
+  } catch (e) {
+    console.error("Failed to initialize Supabase client:", e);
+  }
+}
 
 function formatTimestamp(isoString) {
   if (!isoString) return "";
@@ -35,8 +42,8 @@ export default async function handler(req, res) {
     return;
   }
 
-  if (!supabaseUrl || !supabaseKey) {
-    return res.status(500).json({ result: 'error', msg: 'Server Configuration Error: SUPABASE_URL or SUPABASE_KEY is missing.' });
+  if (!supabase) {
+    return res.status(500).json({ result: 'error', msg: 'Server Configuration Error: Supabase client is not initialized. Please ensure SUPABASE_URL and SUPABASE_KEY environment variables are configured in the Vercel dashboard.' });
   }
 
   const isPublic = req.query.type === 'public';
