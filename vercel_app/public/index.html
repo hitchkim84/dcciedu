@@ -379,6 +379,7 @@
          */
         const scriptURL = '/api/proxy';
         let courseData = {};
+        let activeCourseId = '';
 
         const loadingSpinner = document.getElementById('loading-spinner');
         const scheduleBody = document.getElementById('schedule-body');
@@ -589,6 +590,7 @@
         function loadDetail(courseId) {
             const data = courseData[courseId];
             if (!data) return;
+            activeCourseId = courseId;
 
             const { isClosed, cap, cur } = getCourseStatus(data);
 
@@ -671,6 +673,18 @@
                 if (result.result === 'success') {
                     alert(`[신청 완료]\n정상적으로 접수되었습니다.\n담당자가 확인 후 문자로 안내해 드리겠습니다.`);
                     closeModal();
+
+                    // Navigate to the category page containing the course
+                    const course = courseData[activeCourseId];
+                    if (course) {
+                        const targetPage = (course.category || '').includes('FTA') ? 'list-fta' : 'list-competency';
+                        showPage(targetPage);
+                    } else {
+                        showPage('main');
+                    }
+
+                    // Refresh course list to show updated counts
+                    fetchCourses();
                 } else throw new Error(result.msg);
             } catch (e) {
                 alert('오류가 발생했습니다: ' + e.message);
