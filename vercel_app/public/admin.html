@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>관리자 페이지 - 교육 과정 등록</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
 
@@ -104,7 +105,7 @@
                 <form id="courseForm" class="space-y-6">
 
                     <!-- 기본 정보 -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="grid grid-cols-1 gap-6">
                         <div>
                             <label class="block text-sm font-bold text-gray-700 mb-1">카테고리</label>
                             <select id="category"
@@ -115,11 +116,6 @@
                                 <option value="재직자 AI 교육">재직자 AI 교육</option>
                                 <option value="FTA 실무 교육">FTA 실무 교육</option>
                             </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-bold text-gray-700 mb-1">관리자 비밀번호</label>
-                            <input type="password" id="adminPassword" required placeholder="스크립트에 설정된 비밀번호"
-                                class="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-red-500">
                         </div>
                     </div>
 
@@ -279,17 +275,23 @@
                     </svg>
                 </div>
                 <h2 class="text-2xl font-bold text-gray-900">관리자 로그인</h2>
-                <p class="text-sm text-gray-500 mt-2">접근 권한을 확인하기 위해 비밀번호를 입력해주세요.</p>
+                <p class="text-sm text-gray-500 mt-2">접근 권한을 확인하기 위해 이메일과 비밀번호를 입력해주세요.</p>
             </div>
-            <form onsubmit="event.preventDefault(); tryLogin();" class="space-y-6">
+            <form onsubmit="event.preventDefault(); tryLogin();" class="space-y-4">
+                <div>
+                    <label for="login-email" class="block text-sm font-medium text-gray-700 mb-1">이메일</label>
+                    <input type="email" id="login-email" required
+                        class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                        placeholder="admin@example.com" autofocus>
+                </div>
                 <div>
                     <label for="login-password" class="block text-sm font-medium text-gray-700 mb-1">비밀번호</label>
                     <input type="password" id="login-password" required
-                        class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                        placeholder="비밀번호 입력" autofocus>
+                        class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                        placeholder="비밀번호 입력">
                 </div>
                 <button type="submit"
-                    class="w-full bg-blue-900 text-white font-bold py-3 px-4 rounded-xl hover:bg-blue-800 transition-colors shadow-lg transform active:scale-95">
+                    class="w-full bg-blue-900 text-white font-bold py-3 px-4 rounded-xl hover:bg-blue-800 transition-colors shadow-lg transform active:scale-95 mt-2">
                     로그인
                 </button>
             </form>
@@ -300,46 +302,91 @@
         // ★★★ Vercel 배포용 프록시 URL ★★★
         const scriptURL = '/api/proxy';
 
+        let supabase;
+        let sessionToken = null; // JWT Access Token
         let allCourses = {}; // 데이터 저장용
         let editingCourseId = null; // 현재 수정 중인 ID
-        let cachedPassword = null; // 로그인한 비밀번호 저장
 
-        // 초기 로드 시 자동 실행 방지 (로그인 대기)
-        // window.onload = function () { ... };
+        // Initialize Supabase and check session on load
+        async function initSupabase() {
+            try {
+                const res = await fetch('/api/config');
+                const config = await res.json();
+                if (!config.supabaseUrl || !config.supabaseKey) {
+                    throw new Error("Supabase configuration is missing on the server.");
+                }
 
-        function tryLogin() {
-            const pwdInput = document.getElementById('login-password');
-            const pwd = pwdInput.value;
+                supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
 
-            if (!pwd) return alert('비밀번호를 입력해주세요.');
+                // Listen to auth state changes
+                supabase.auth.onAuthStateChange((event, session) => {
+                    if (session) {
+                        sessionToken = session.access_token;
+                        document.getElementById('login-modal').classList.add('hidden');
+                        document.getElementById('admin-content').classList.remove('hidden');
+                        fetchStatus();
+                    } else {
+                        sessionToken = null;
+                        document.getElementById('login-modal').classList.remove('hidden');
+                        document.getElementById('admin-content').classList.add('hidden');
+                    }
+                });
 
-            // 검증을 위해 가벼운 데이터 요청 시도 (GET)
-            fetch(scriptURL + '?type=admin', {
-                method: 'GET',
-                headers: { 'x-admin-password': pwd }
-            })
-                .then(res => {
-                    if (res.status === 401) throw new Error('비밀번호가 올바르지 않습니다.');
-                    if (!res.ok) throw new Error('서버 오류가 발생했습니다.');
-                    return res.json();
-                })
-                .then(data => {
-                    // 로그인 성공
-                    cachedPassword = pwd;
+                // Check current session
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session) {
+                    sessionToken = session.access_token;
                     document.getElementById('login-modal').classList.add('hidden');
                     document.getElementById('admin-content').classList.remove('hidden');
+                    fetchStatus();
+                } else {
+                    document.getElementById('login-modal').classList.remove('hidden');
+                    document.getElementById('admin-content').classList.add('hidden');
+                }
+            } catch (err) {
+                console.error("Initialization Error:", err);
+                alert("설정 로드 실패: " + err.message);
+            }
+        }
 
-                    // 비밀번호 입력란 자동 채우기 (기존 폼 호환성)
-                    const adminPwdField = document.getElementById('adminPassword');
-                    if (adminPwdField) adminPwdField.value = pwd;
+        window.onload = initSupabase;
 
-                    renderStatusTable(data, document.getElementById('status-body'));
-                })
-                .catch(err => {
-                    alert(err.message);
-                    pwdInput.value = '';
-                    pwdInput.focus();
-                });
+        // Login Handler
+        async function tryLogin() {
+            const emailInput = document.getElementById('login-email');
+            const pwdInput = document.getElementById('login-password');
+            const email = emailInput.value;
+            const password = pwdInput.value;
+
+            if (!email || !password) return alert('이메일과 비밀번호를 모두 입력해주세요.');
+
+            const btn = document.querySelector('button[onclick="tryLogin()"]') || document.querySelector('button[type="submit"]');
+            const originalText = btn.innerText;
+            btn.innerText = "로그인 중...";
+            btn.disabled = true;
+
+            try {
+                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) throw error;
+
+                // Success is handled by onAuthStateChange listener
+                emailInput.value = '';
+                pwdInput.value = '';
+            } catch (err) {
+                alert('로그인 실패: ' + err.message);
+                pwdInput.value = '';
+                pwdInput.focus();
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        // Logout Handler
+        async function logout() {
+            if (supabase) {
+                await supabase.auth.signOut();
+            }
         }
 
         function switchTab(tabId) {
@@ -390,9 +437,8 @@
         function submitCourse() {
             const btn = document.getElementById('btn-submit');
             const originalText = btn.innerText;
-            const pwd = cachedPassword; // 저장된 비밀번호 사용
 
-            if (!pwd) return alert('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
+            if (!sessionToken) return alert('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
 
             // 일시 통합 업데이트
             if (!updateDateFromInputs()) {
@@ -408,7 +454,6 @@
             const formData = new FormData();
             formData.append('action', editingCourseId ? 'update_course' : 'add_course');
             if (editingCourseId) formData.append('id', editingCourseId);
-            formData.append('password', pwd);
 
             // 데이터 매핑
             ['category', 'title', 'date', 'place', 'capacity', 'deadline', 'target', 'goal', 'content', 'instructor', 'contact', 'paymentInfo', 'otherInfo'].forEach(field => {
@@ -422,7 +467,7 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
-                    'x-admin-password': pwd // Proxy 인증용 헤더 추가
+                    'Authorization': 'Bearer ' + sessionToken
                 },
                 body: data
             })
@@ -433,7 +478,6 @@
                         if (editingCourseId) cancelEdit(); // 수정 모드 종료
                         else {
                             document.getElementById('courseForm').reset();
-                            document.getElementById('adminPassword').value = pwd; // 비밀번호는 유지 편의성
                         }
                     } else {
                         alert(`⛔ ${actionType} 실패: ` + result.msg);
@@ -452,13 +496,15 @@
         // --- 기능 2: 신청자 현황 조회 ---
         function fetchStatus() {
             const tbody = document.getElementById('status-body');
-            if (!cachedPassword) return; // 로그인 전이면 중단
+            if (!sessionToken) return; // 로그인 전이면 중단
 
             tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-10 text-center text-blue-600 font-bold"><span class="animate-pulse">데이터를 불러오는 중입니다...</span></td></tr>';
 
             fetch(scriptURL + '?type=admin', {
                 method: 'GET',
-                headers: { 'x-admin-password': cachedPassword }
+                headers: {
+                    'Authorization': 'Bearer ' + sessionToken
+                }
             })
                 .then(response => response.json())
                 .then(data => renderStatusTable(data, tbody))
@@ -473,7 +519,6 @@
             }
 
             const now = new Date();
-            let hasData = false;
 
             // 1. 날짜순 정렬 (오름차순)
             const courses = Object.keys(data).map(key => data[key]).sort((a, b) => {
@@ -531,12 +576,15 @@
         // --- 기능 3: 관리 (수정/삭제) ---
         function fetchManage() {
             const tbody = document.getElementById('manage-body');
-            
+            if (!sessionToken) return;
+
             tbody.innerHTML = '<tr><td colspan="3" class="px-6 py-10 text-center text-blue-600 font-bold"><span class="animate-pulse">데이터를 불러오는 중입니다...</span></td></tr>';
 
             fetch(scriptURL + '?type=admin', {
                 method: 'GET',
-                headers: { 'x-admin-password': cachedPassword }
+                headers: {
+                    'Authorization': 'Bearer ' + sessionToken
+                }
             })
                 .then(response => response.json())
                 .then(data => {
@@ -601,7 +649,6 @@
             document.getElementById('otherInfo').value = data.otherInfo;
 
             // 일시(date) 필드 파싱해서 개별 입력란에 채우기
-            // 예: "2025. 3. 14(목) 14:00~18:00"
             try {
                 const dateText = data.date;
                 const datePart = dateText.match(/(\d{4})[\.\s]+(\d{1,2})[\.\s]+(\d{1,2})/);
@@ -645,21 +692,19 @@
 
         // 삭제
         function deleteCourse(id) {
-            const pwd = cachedPassword; // 저장된 비밀번호 사용
-            if (!pwd) return alert('로그인이 필요합니다.');
+            if (!sessionToken) return alert('로그인이 필요합니다.');
 
             if (!confirm("정말로 이 과정을 삭제하시겠습니까?\n삭제 후에는 복구할 수 없습니다.")) return;
 
             const formData = new FormData();
             formData.append('action', 'delete_course');
             formData.append('id', id);
-            formData.append('password', pwd);
 
             fetch(scriptURL + '?type=admin', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
-                    'x-admin-password': pwd // Proxy 인증용 헤더 추가
+                    'Authorization': 'Bearer ' + sessionToken
                 },
                 body: new URLSearchParams(formData)
             })
