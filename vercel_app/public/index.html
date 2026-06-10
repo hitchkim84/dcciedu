@@ -265,6 +265,85 @@
                 </div>
             </div>
         </div>
+        <!-- 찾아오시는 길 페이지 -->
+        <div id="page-directions" class="hidden-page">
+            <div class="flex items-center mb-6">
+                <button onclick="showPage('main')"
+                    class="mr-4 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-gray-700 font-medium">&larr; 홈으로</button>
+                <span class="text-gray-500 text-sm font-medium">찾아오시는 길</span>
+            </div>
+            <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+                <div class="bg-gray-800 px-6 py-6">
+                    <span class="text-blue-300 font-bold text-xs sm:text-sm tracking-wider uppercase mb-1 block">위치 안내</span>
+                    <h1 class="text-2xl sm:text-3xl font-bold text-white tracking-tight break-keep">대구상공회의소</h1>
+                </div>
+                <div class="p-6 sm:p-8">
+                    <!-- 지도 영역 -->
+                    <div class="mb-8">
+                        <div id="map-container" class="relative w-full h-[350px] sm:h-[450px] bg-gray-100 rounded-xl overflow-hidden border border-gray-200 shadow-inner">
+                            <div id="map" class="w-full h-full"></div>
+                            <!-- Map Fallback / Loading -->
+                            <div id="map-fallback" class="absolute inset-0 flex flex-col items-center justify-center p-4 bg-gray-50 text-center">
+                                <svg class="w-12 h-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
+                                <p class="text-gray-600 font-medium mb-4">네이버 지도 API 연결 대기 중...</p>
+                                <a id="btn-naver-map" href="https://map.naver.com/v5/search/%EB%8C%85%EA%B5%AC%EC%83%81%EA%B3%B5%ED%9A%8C%EC%9D%98%EC%86%8C/place/11624890" target="_blank" class="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow transition-all">네이버 지도로 크게 보기</a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 주소 및 연락처 -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                        <div>
+                            <h3 class="text-lg font-bold text-gray-900 mb-4 border-l-4 border-blue-900 pl-3">주소 및 연락처</h3>
+                            <div class="bg-gray-50 rounded-lg p-5 text-sm space-y-3">
+                                <div class="flex items-start">
+                                    <span class="text-gray-500 w-24 flex-shrink-0 font-semibold">도로명 주소</span>
+                                    <span class="font-medium text-gray-900">대구광역시 동구 동대구로 457 (신천동)</span>
+                                </div>
+                                <div class="flex items-start">
+                                    <span class="text-gray-500 w-24 flex-shrink-0 font-semibold">지번 주소</span>
+                                    <span class="font-medium text-gray-900">대구광역시 동구 신천동 107</span>
+                                </div>
+                                <div class="flex items-start">
+                                    <span class="text-gray-500 w-24 flex-shrink-0 font-semibold">우편번호</span>
+                                    <span class="font-medium text-gray-900">41260</span>
+                                </div>
+                                <div class="flex items-start">
+                                    <span class="text-gray-500 w-24 flex-shrink-0 font-semibold">대표 전화</span>
+                                    <a href="tel:053-222-3000" class="font-medium text-blue-700 hover:underline">053-222-3000</a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 대중교통 안내 -->
+                        <div>
+                            <h3 class="text-lg font-bold text-gray-900 mb-4 border-l-4 border-blue-900 pl-3">대중교통 안내</h3>
+                            <div class="bg-gray-50 rounded-lg p-5 text-sm space-y-4">
+                                <div class="flex items-start">
+                                    <span class="bg-blue-100 text-blue-800 text-[11px] px-2 py-0.5 rounded font-bold mr-3 mt-0.5 whitespace-nowrap">지하철</span>
+                                    <div>
+                                        <p class="font-semibold text-gray-900 mb-1">1호선 동대구역</p>
+                                        <p class="text-gray-600">2번 출구에서 신천 방향으로 도보 약 10분 (약 700m)</p>
+                                        <p class="font-semibold text-gray-900 mt-2 mb-1">2호선 범어역</p>
+                                        <p class="text-gray-600">11번 출구에서 동대구역 방향으로 도보 약 15분 (약 1km)</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-start border-t border-gray-200 pt-3">
+                                    <span class="bg-green-100 text-green-800 text-[11px] px-2 py-0.5 rounded font-bold mr-3 mt-0.5 whitespace-nowrap">시내버스</span>
+                                    <div>
+                                        <p class="font-semibold text-gray-900 mb-1">대구상공회의소 앞/건너 정류장</p>
+                                        <p class="text-gray-600">정류장 하차 바로 앞</p>
+                                        <p class="text-gray-500 mt-1 leading-relaxed">
+                                            노선: 156, 309, 425, 524, 651, 724, 909, 937, 동구1, 동구1-1, 수성4
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </main>
 
     <!-- Footer Menu Bar -->
@@ -274,7 +353,7 @@
             <a href="#" class="hover:text-white transition-colors font-bold text-white">개인정보처리방침</a>
             <a href="#" class="hover:text-white transition-colors">이메일무단수집거부</a>
             <a href="#" class="hover:text-white transition-colors">환불규정</a>
-            <a href="#" class="hover:text-white transition-colors">찾아오시는길</a>
+            <a href="javascript:void(0)" onclick="showPage('directions')" class="hover:text-white transition-colors">찾아오시는길</a>
         </div>
     </div>
 
@@ -380,6 +459,8 @@
         const scriptURL = '/api/proxy';
         let courseData = {};
         let activeCourseId = '';
+        let configData = null;
+        let isMapInitialized = false;
 
         const loadingSpinner = document.getElementById('loading-spinner');
         const scheduleBody = document.getElementById('schedule-body');
@@ -441,6 +522,91 @@
                 else r = v.substr(0, 3) + '-' + v.substr(3, 4) + '-' + v.substr(7);
             }
             target.value = r;
+        }
+
+        /**
+         * [데이터] Naver Map API 관련 설정 및 SDK 동적 로딩
+         */
+        async function fetchConfig() {
+            try {
+                const response = await fetch('/api/config');
+                configData = await response.json();
+                
+                if (configData.naverClientId) {
+                    loadMapSDK(configData.naverClientId);
+                } else {
+                    console.log("NAVER_CLIENT_ID environment variable not found. Showing fallback link.");
+                    const fallbackMsg = document.querySelector('#map-fallback p');
+                    if (fallbackMsg) fallbackMsg.innerHTML = "네이버 지도 API 키 설정이 되어있지 않습니다.<br>Vercel의 NAVER_CLIENT_ID 설정을 확인해주세요.";
+                }
+            } catch (e) {
+                console.error("Failed to fetch config:", e);
+            }
+        }
+
+        function loadMapSDK(clientId) {
+            const script = document.createElement('script');
+            script.type = 'text/javascript';
+            script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=${clientId}`;
+            script.onload = () => {
+                const fallback = document.getElementById('map-fallback');
+                if (fallback) fallback.style.display = 'none';
+                
+                if (!document.getElementById('page-directions').classList.contains('hidden-page')) {
+                    initMap();
+                }
+            };
+            script.onerror = () => {
+                console.error("Failed to load Naver Map SDK");
+                const fallbackMsg = document.querySelector('#map-fallback p');
+                if (fallbackMsg) fallbackMsg.innerText = "네이버 지도 SDK 로드에 실패했습니다.";
+            };
+            document.head.appendChild(script);
+        }
+
+        function initMap() {
+            if (isMapInitialized || !window.naver || !window.naver.maps) return;
+            
+            try {
+                const location = new naver.maps.LatLng(35.87189, 128.62479);
+                
+                const mapOptions = {
+                    center: location,
+                    zoom: 16,
+                    zoomControl: true,
+                    zoomControlOptions: {
+                        position: naver.maps.Position.TOP_RIGHT
+                    }
+                };
+                
+                const map = new naver.maps.Map('map', mapOptions);
+                
+                const marker = new naver.maps.Marker({
+                    position: location,
+                    map: map,
+                    title: '대구상공회의소'
+                });
+                
+                const contentString = [
+                    '<div class="p-3 bg-white border border-gray-200 rounded shadow-md text-xs font-semibold">',
+                    '  <h4 class="text-sm font-bold text-gray-900 mb-1">대구상공회의소</h4>',
+                    '  <p class="text-gray-600">대구광역시 동구 동대구로 457</p>',
+                    '</div>'
+                ].join('');
+                
+                const infowindow = new naver.maps.InfoWindow({
+                    content: contentString,
+                    borderColor: "#e2e8f0",
+                    borderWidth: 1,
+                    anchorSize: new naver.maps.Size(10, 10),
+                    pixelOffset: new naver.maps.Point(0, -5)
+                });
+                
+                infowindow.open(map, marker);
+                isMapInitialized = true;
+            } catch (err) {
+                console.error("Map initialization failed:", err);
+            }
         }
 
         /**
@@ -582,6 +748,14 @@
             document.getElementById('page-' + pageId).classList.remove('hidden-page');
             window.scrollTo(0, 0);
             if (addToHistory) history.pushState({ page: pageId }, '', '');
+
+            if (pageId === 'directions') {
+                if (window.naver && window.naver.maps) {
+                    const fallback = document.getElementById('map-fallback');
+                    if (fallback) fallback.style.display = 'none';
+                    initMap();
+                }
+            }
         }
 
         /**
@@ -697,6 +871,7 @@
         // 초기화
         document.addEventListener('DOMContentLoaded', () => {
             history.replaceState({ page: 'main' }, '', '');
+            fetchConfig();
             fetchCourses();
         });
 

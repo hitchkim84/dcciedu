@@ -15,6 +15,7 @@ module.exports = function handler(req, res) {
   res.status(200).json({
     supabaseUrl: process.env.SUPABASE_URL || "",
     supabaseKey: process.env.SUPABASE_KEY || "",
+    naverClientId: process.env.NAVER_CLIENT_ID || "",
     hasClient: typeof createClient === 'function'
   });
 }
