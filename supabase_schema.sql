@@ -84,3 +84,30 @@ create policy "Only admin can view applications"
   on education_apply for select
   to authenticated
   using ( true );
+
+
+-- 4. 일반 사용자용 공개 뷰 (Public View) 생성
+-- RLS 보안 정책상 비로그인 사용자는 education_apply 테이블의 신청 명단을 직접 조회할 수 없으므로,
+-- 개인정보 유출 없이 신청 인원 수(current)만 계산하여 보여줄 수 있는 보안 뷰를 생성합니다.
+create or replace view public_courses as
+select 
+  id,
+  created_at,
+  category,
+  title,
+  date,
+  place,
+  capacity,
+  deadline,
+  target,
+  goal,
+  content,
+  instructor,
+  contact,
+  payment_info,
+  other_info,
+  (select count(*)::int from education_apply where course_id = courses.id) as current
+from courses;
+
+-- 뷰에 대한 읽기 권한을 anon(비로그인), authenticated(로그인) 역할 모두에게 부여
+grant select on public_courses to anon, authenticated;

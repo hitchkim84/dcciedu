@@ -79,74 +79,82 @@ module.exports = async function handler(req, res) {
   // GET Request: Fetch courses and applicants count/list
   if (req.method === 'GET') {
     try {
-      const { data: courses, error } = await dbClient
-        .from('courses')
-        .select('*, education_apply(*)');
-
-      if (error) throw error;
-
-      // Format response to dictionary keyed by ID (matches frontend Apps Script expected format)
-      const responseData = {};
-      courses.forEach(course => {
-        const apps = (course.education_apply || []).map(app => ({
-          timestamp: formatTimestamp(app.created_at),
-          bizName: app.company || "",
-          bizNo: app.biz_no || "",
-          dept: app.dept || "",
-          position: app.position || "",
-          name: app.name || "",
-          phone: app.phone || "",
-          email: app.email || "",
-          privacy: app.agree_privacy ? "동의함" : "미동의",
-          memberType: "",
-          feeStatus: "",
-          councilType: ""
-        }));
-
-        responseData[course.id] = {
-          id: course.id,
-          category: course.category || "",
-          title: course.title || "",
-          date: course.date || "",
-          place: course.place || "",
-          capacity: course.capacity || 0,
-          deadline: course.deadline || "",
-          target: course.target || "",
-          goal: course.goal || "",
-          content: course.content || "",
-          instructor: course.instructor || "",
-          contact: course.contact || "",
-          paymentInfo: course.payment_info || "",
-          otherInfo: course.other_info || "",
-          current: apps.length,
-          applicants: apps
-        };
-      });
-
-      let finalData = responseData;
-
       if (isPublic) {
-        // Whitelist Filtering for Public Access (Strip out applicants list for privacy)
-        const ALLOWED_FIELDS = [
-          'id', 'category', 'title', 'date', 'place', 'capacity', 'current',
-          'deadline', 'target', 'goal', 'instructor', 'content',
-          'paymentInfo', 'otherInfo', 'contact', 'courseName', 'month', 'status', 'link',
-          'result', 'msg'
-        ];
+        // Query the public view which has the pre-calculated applicant counts
+        const { data: courses, error } = await dbClient
+          .from('public_courses')
+          .select('*');
 
-        const filteredData = {};
-        Object.keys(responseData).forEach(key => {
-          const item = responseData[key];
-          const filteredItem = {};
-          ALLOWED_FIELDS.forEach(field => {
-            if (item[field] !== undefined) filteredItem[field] = item[field];
-          });
-          filteredData[key] = filteredItem;
+        if (error) throw error;
+
+        // Map to response format
+        const responseData = {};
+        courses.forEach(course => {
+          responseData[course.id] = {
+            id: course.id,
+            category: course.category || "",
+            title: course.title || "",
+            date: course.date || "",
+            place: course.place || "",
+            capacity: course.capacity || 0,
+            deadline: course.deadline || "",
+            target: course.target || "",
+            goal: course.goal || "",
+            content: course.content || "",
+            instructor: course.instructor || "",
+            contact: course.contact || "",
+            paymentInfo: course.payment_info || "",
+            otherInfo: course.other_info || "",
+            current: course.current || 0
+          };
         });
-        finalData = filteredData;
-      }
+        return res.status(200).json(responseData);
+      } else {
+        // Admin Request: Fetch courses and full applicant list
+        const { data: courses, error } = await dbClient
+          .from('courses')
+          .select('*, education_apply(*)');
 
-      return res.status(200).json(finalData);
+        if (error) throw error;
+
+        const responseData = {};
+        courses.forEach(course => {
+          const apps = (course.education_apply || []).map(app => ({
+            timestamp: formatTimestamp(app.created_at),
+            bizName: app.company || "",
+            bizNo: app.biz_no || "",
+            dept: app.dept || "",
+            position: app.position || "",
+            name: app.name || "",
+            phone: app.phone || "",
+            email: app.email || "",
+            privacy: app.agree_privacy ? "동의함" : "미동의",
+            memberType: "",
+            feeStatus: "",
+            councilType: ""
+          }));
+
+          responseData[course.id] = {
+            id: course.id,
+            category: course.category || "",
+            title: course.title || "",
+            date: course.date || "",
+            place: course.place || "",
+            capacity: course.capacity || 0,
+            deadline: course.deadline || "",
+            target: course.target || "",
+            goal: course.goal || "",
+            content: course.content || "",
+            instructor: course.instructor || "",
+            contact: course.contact || "",
+            paymentInfo: course.payment_info || "",
+            otherInfo: course.other_info || "",
+            current: apps.length,
+            applicants: apps
+          };
+        });
+        return res.status(200).json(responseData);
+      }
     } catch (err) {
       console.error('Database GET Error:', err);
       return res.status(500).json({ result: 'error', msg: err.message });
