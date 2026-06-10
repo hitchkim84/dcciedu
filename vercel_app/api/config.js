@@ -1,3 +1,5 @@
+import { createClient } from '@supabase/supabase-js';
+
 export default function handler(req, res) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -12,6 +14,7 @@ export default function handler(req, res) {
 
   res.status(200).json({
     supabaseUrl: process.env.SUPABASE_URL || "",
-    supabaseKey: process.env.SUPABASE_KEY || ""
+    supabaseKey: process.env.SUPABASE_KEY || "",
+    hasClient: typeof createClient === 'function'
   });
 }
