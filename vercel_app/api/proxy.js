@@ -47,6 +47,7 @@ module.exports = async function handler(req, res) {
   }
 
   const isPublic = req.query.type === 'public';
+  let dbClient = supabase;
 
   if (!isPublic) {
     const authHeader = req.headers['authorization'];
@@ -60,12 +61,25 @@ module.exports = async function handler(req, res) {
     if (error || !user) {
       return res.status(401).json({ result: 'error', msg: 'Unauthorized: Invalid or expired session' });
     }
+
+    try {
+      dbClient = createClient(supabaseUrl, supabaseKey, {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      });
+    } catch (clientErr) {
+      console.error("Failed to create request-scoped client:", clientErr);
+      return res.status(500).json({ result: 'error', msg: 'Failed to authenticate database client.' });
+    }
   }
 
   // GET Request: Fetch courses and applicants count/list
   if (req.method === 'GET') {
     try {
-      const { data: courses, error } = await supabase
+      const { data: courses, error } = await dbClient
         .from('courses')
         .select('*, education_apply(*)');
 
@@ -146,7 +160,7 @@ module.exports = async function handler(req, res) {
 
       // 1. Add course
       if (action === 'add_course') {
-        const { data, error } = await supabase
+        const { data, error } = await dbClient
           .from('courses')
           .insert([{
             category: req.body.category,
@@ -171,7 +185,7 @@ module.exports = async function handler(req, res) {
 
       // 2. Update course
       else if (action === 'update_course') {
-        const { error } = await supabase
+        const { error } = await dbClient
           .from('courses')
           .update({
             category: req.body.category,
@@ -196,7 +210,7 @@ module.exports = async function handler(req, res) {
 
       // 3. Delete course
       else if (action === 'delete_course') {
-        const { error } = await supabase
+        const { error } = await dbClient
           .from('courses')
           .delete()
           .eq('id', req.body.id);
@@ -213,7 +227,7 @@ module.exports = async function handler(req, res) {
         }
 
         // Find course ID by title
-        const { data: courseData, error: courseError } = await supabase
+        const { data: courseData, error: courseError } = await dbClient
           .from('courses')
           .select('id')
           .eq('title', courseTitle.trim())
@@ -227,7 +241,7 @@ module.exports = async function handler(req, res) {
         const courseId = courseData[0].id;
 
         // Insert registration record to Supabase
-        const { error: applyError } = await supabase
+        const { error: applyError } = await dbClient
           .from('education_apply')
           .insert([{
             course_id: courseId,
