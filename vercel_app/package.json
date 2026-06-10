@@ -2,7 +2,6 @@
   "name": "dcci-edu-vercel",
   "version": "1.0.0",
   "description": "DCCI Education Platform Vercel Deployment",
-  "type": "module",
   "scripts": {
     "start": "vercel dev"
   },
