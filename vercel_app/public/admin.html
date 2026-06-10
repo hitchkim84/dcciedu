@@ -302,7 +302,7 @@
         // ★★★ Vercel 배포용 프록시 URL ★★★
         const scriptURL = '/api/proxy';
 
-        let supabase;
+        let supabaseClient;
         let sessionToken = null; // JWT Access Token
         let allCourses = {}; // 데이터 저장용
         let editingCourseId = null; // 현재 수정 중인 ID
@@ -316,10 +316,10 @@
                     throw new Error("Supabase configuration is missing on the server.");
                 }
 
-                supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
+                supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
 
                 // Listen to auth state changes
-                supabase.auth.onAuthStateChange((event, session) => {
+                supabaseClient.auth.onAuthStateChange((event, session) => {
                     if (session) {
                         sessionToken = session.access_token;
                         document.getElementById('login-modal').classList.add('hidden');
@@ -333,7 +333,7 @@
                 });
 
                 // Check current session
-                const { data: { session } } = await supabase.auth.getSession();
+                const { data: { session } } = await supabaseClient.auth.getSession();
                 if (session) {
                     sessionToken = session.access_token;
                     document.getElementById('login-modal').classList.add('hidden');
@@ -366,7 +366,7 @@
             btn.disabled = true;
 
             try {
-                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
                 if (error) throw error;
 
                 // Success is handled by onAuthStateChange listener
@@ -384,8 +384,8 @@
 
         // Logout Handler
         async function logout() {
-            if (supabase) {
-                await supabase.auth.signOut();
+            if (supabaseClient) {
+                await supabaseClient.auth.signOut();
             }
         }
 
