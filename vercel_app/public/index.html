@@ -547,7 +547,7 @@
         function loadMapSDK(clientId) {
             const script = document.createElement('script');
             script.type = 'text/javascript';
-            script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${clientId}`;
+            script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=${clientId}`;
             script.onload = () => {
                 const fallback = document.getElementById('map-fallback');
                 if (fallback) fallback.style.display = 'none';
