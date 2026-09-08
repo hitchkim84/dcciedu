@@ -616,23 +616,18 @@
             loadingSpinner.classList.remove('hidden');
             scheduleBody.innerHTML = '';
 
-            // [로컬 검사용 데이터]
-            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:') {
-                const mockData = {
-                    "course_1": { category: "실무자 역량강화 교육 > 세무/회계", title: "세무회계 실무 기초 과정 (접수중 테스트)", date: "2026. 12. 15(월) 14:00~18:00", place: "대구상공회의소 4층 중회의실", capacity: 50, current: 12, deadline: "2026-12-12", target: "실무자", goal: "기초 세무 지식 습득", instructor: "홍길동 세무사", contact: "기업지원부 (053-222-3109)" },
-                    "course_2": { category: "실무자 역량강화 교육 > 인사/노무", title: "인사노무 핵심 실무 과정 (마감 테스트)", date: "2026. 12. 18(목) 14:00~18:00", place: "대구상공회의소 4층 중회의실", capacity: 40, current: 40, deadline: "2026-12-15", target: "실무자", goal: "근로기준법 핵심 이해", instructor: "이순신 노무사", contact: "기업지원부 (053-222-3109)" },
-                    "course_3": { category: "재직자 AI 교육", title: "ChatGPT를 활용한 업무 자동화 (제한 없음 테스트)", date: "2026. 12. 20(토) 10:00~17:00", place: "대구상공회의소 IT교육장", capacity: 0, current: 8, deadline: "2026-12-18", target: "재직자", goal: "업무 생산성 극대화", instructor: "김유신 강사", contact: "기업지원부 (053-222-3109)" }
-                };
-                courseData = mockData;
-                renderAll();
-                loadingSpinner.classList.add('hidden');
-                return;
-            }
+            const fallbackUrl = 'https://script.google.com/macros/s/AKfycbzZiOrqzVLavEDpGmMf1jCj1fpcg9-GowGxVlOrcdZ7xMXZnfSLG2dbEupX25TNZcIUBA/exec?type=public';
 
             try {
-                const response = await fetch(scriptURL + '?type=public');
-                const data = await response.json();
+                let response;
+                try {
+                    response = await fetch(scriptURL + '?type=public');
+                    if (!response.ok) throw new Error('Proxy offline');
+                } catch (err) {
+                    response = await fetch(fallbackUrl);
+                }
 
+                const data = await response.json();
                 if (data.result === 'error') throw new Error(data.msg);
 
                 // 날짜순 정렬 후 객체화
@@ -841,7 +836,13 @@
                     privacy: document.getElementById('privacy').checked ? "동의함" : "미동의"
                 });
 
-                const response = await fetch(scriptURL + '?type=public', { method: 'POST', body: params });
+                let response;
+                try {
+                    response = await fetch(scriptURL + '?type=public', { method: 'POST', body: params });
+                    if (!response.ok) throw new Error('Proxy offline');
+                } catch (err) {
+                    response = await fetch('https://script.google.com/macros/s/AKfycbzZiOrqzVLavEDpGmMf1jCj1fpcg9-GowGxVlOrcdZ7xMXZnfSLG2dbEupX25TNZcIUBA/exec', { method: 'POST', body: params });
+                }
                 const result = await response.json();
 
                 if (result.result === 'success') {

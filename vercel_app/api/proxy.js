@@ -1,306 +1,101 @@
-const { createClient } = require('@supabase/supabase-js');
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
-
-// Initialize Supabase client safely
-let supabase = null;
-if (supabaseUrl && supabaseKey) {
-  try {
-    supabase = createClient(supabaseUrl, supabaseKey);
-  } catch (e) {
-    console.error("Failed to initialize Supabase client:", e);
-  }
-}
-
-function formatTimestamp(isoString) {
-  if (!isoString) return "";
-  try {
-    const d = new Date(isoString);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    const hh = String(d.getHours()).padStart(2, '0');
-    const min = String(d.getMinutes()).padStart(2, '0');
-    const ss = String(d.getSeconds()).padStart(2, '0');
-    return `${yyyy}. ${mm}. ${dd} ${hh}:${min}:${ss}`;
-  } catch (e) {
-    return String(isoString);
-  }
-}
-
 module.exports = async function handler(req, res) {
+  const SCRIPT_URL = process.env.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbzZiOrqzVLavEDpGmMf1jCj1fpcg9-GowGxVlOrcdZ7xMXZnfSLG2dbEupX25TNZcIUBA/exec";
+
   // CORS headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, x-admin-password');
 
-  // OPTIONS: Always Allow (CORS)
+  // 1. OPTIONS: Always Allow (CORS)
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
-  if (!supabase) {
-    return res.status(500).json({ result: 'error', msg: 'Server Configuration Error: Supabase client is not initialized. Please ensure SUPABASE_URL and SUPABASE_KEY environment variables are configured in the Vercel dashboard.' });
-  }
-
+  // [보안 로직] 공개(Public) vs 관리자(Admin) 분리
   const isPublic = req.query.type === 'public';
-  let dbClient = supabase;
 
   if (!isPublic) {
-    const authHeader = req.headers['authorization'];
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ result: 'error', msg: 'Unauthorized: Missing session token' });
-    }
+    const serverPassword = process.env.ADMIN_PASSWORD || "dccitpt3102";
+    const clientPassword = req.headers['x-admin-password'] || req.query.password;
 
-    const token = authHeader.split(' ')[1];
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-
-    if (error || !user) {
-      return res.status(401).json({ result: 'error', msg: 'Unauthorized: Invalid or expired session' });
-    }
-
-    try {
-      dbClient = createClient(supabaseUrl, supabaseKey, {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      });
-    } catch (clientErr) {
-      console.error("Failed to create request-scoped client:", clientErr);
-      return res.status(500).json({ result: 'error', msg: 'Failed to authenticate database client.' });
+    if (serverPassword && clientPassword !== serverPassword) {
+      return res.status(401).json({ result: 'error', msg: 'Unauthorized: 관리자 비밀번호가 올바르지 않습니다.' });
     }
   }
 
-  // GET Request: Fetch courses and applicants count/list
-  if (req.method === 'GET') {
+  try {
+    // Google Apps Script 대상 URL 생성
+    const targetUrl = new URL(SCRIPT_URL);
+    Object.keys(req.query).forEach(key => {
+      targetUrl.searchParams.append(key, req.query[key]);
+    });
+
+    const options = {
+      method: req.method,
+      headers: {}
+    };
+
+    if (req.method === 'POST') {
+      const formBody = new URLSearchParams(req.body);
+      options.body = formBody;
+      options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    }
+
+    // Google Apps Script 호출
+    const googleResponse = await fetch(targetUrl.toString(), options);
+    const text = await googleResponse.text();
+
+    let data;
     try {
-      if (isPublic) {
-        // Query the public view which has the pre-calculated applicant counts
-        const { data: courses, error } = await dbClient
-          .from('public_courses')
-          .select('*');
+      data = JSON.parse(text);
+    } catch (e) {
+      console.error("Failed to parse JSON from Google Script:", text);
+      return res.status(502).json({ result: 'error', msg: 'Google Script 응답 형식 오류', raw: text });
+    }
 
-        if (error) throw error;
+    // 메인 페이지(Public) 조회 시 개인정보 화이트리스트 필터링
+    if (isPublic) {
+      const ALLOWED_FIELDS = [
+        'id', 'category', 'title', 'date', 'place', 'capacity', 'current',
+        'deadline', 'target', 'goal', 'instructor', 'content',
+        'paymentInfo', 'otherInfo', 'contact', 'courseName', 'month', 'status', 'link',
+        'result', 'msg'
+      ];
 
-        // Map to response format
-        const responseData = {};
-        courses.forEach(course => {
-          responseData[course.id] = {
-            id: course.id,
-            category: course.category || "",
-            title: course.title || "",
-            date: course.date || "",
-            place: course.place || "",
-            capacity: course.capacity || 0,
-            deadline: course.deadline || "",
-            target: course.target || "",
-            goal: course.goal || "",
-            content: course.content || "",
-            instructor: course.instructor || "",
-            contact: course.contact || "",
-            paymentInfo: course.payment_info || "",
-            otherInfo: course.other_info || "",
-            current: course.current || 0
-          };
+      if (Array.isArray(data)) {
+        data = data.map(item => {
+          const filtered = {};
+          ALLOWED_FIELDS.forEach(field => {
+            if (item[field] !== undefined) filtered[field] = item[field];
+          });
+          return filtered;
         });
-        return res.status(200).json(responseData);
-      } else {
-        // Admin Request: Fetch courses and full applicant list
-        const { data: courses, error } = await dbClient
-          .from('courses')
-          .select('*, education_apply(*)');
-
-        if (error) throw error;
-
-        const responseData = {};
-        courses.forEach(course => {
-          const apps = (course.education_apply || []).map(app => ({
-            timestamp: formatTimestamp(app.created_at),
-            bizName: app.company || "",
-            bizNo: app.biz_no || "",
-            dept: app.dept || "",
-            position: app.position || "",
-            name: app.name || "",
-            phone: app.phone || "",
-            email: app.email || "",
-            privacy: app.agree_privacy ? "동의함" : "미동의",
-            memberType: "",
-            feeStatus: "",
-            councilType: ""
-          }));
-
-          responseData[course.id] = {
-            id: course.id,
-            category: course.category || "",
-            title: course.title || "",
-            date: course.date || "",
-            place: course.place || "",
-            capacity: course.capacity || 0,
-            deadline: course.deadline || "",
-            target: course.target || "",
-            goal: course.goal || "",
-            content: course.content || "",
-            instructor: course.instructor || "",
-            contact: course.contact || "",
-            paymentInfo: course.payment_info || "",
-            otherInfo: course.other_info || "",
-            current: apps.length,
-            applicants: apps
-          };
-        });
-        return res.status(200).json(responseData);
-      }
-    } catch (err) {
-      console.error('Database GET Error:', err);
-      return res.status(500).json({ result: 'error', msg: err.message });
-    }
-  }
-
-  // POST Request: Add/Update/Delete courses or Submit application
-  if (req.method === 'POST') {
-    try {
-      const { action } = req.body;
-
-      // 1. Add course
-      if (action === 'add_course') {
-        const { data, error } = await dbClient
-          .from('courses')
-          .insert([{
-            category: req.body.category,
-            title: req.body.title,
-            date: req.body.date,
-            place: req.body.place,
-            capacity: parseInt(req.body.capacity) || 0,
-            deadline: req.body.deadline || null,
-            target: req.body.target,
-            goal: req.body.goal,
-            content: req.body.content,
-            instructor: req.body.instructor,
-            contact: req.body.contact,
-            payment_info: req.body.paymentInfo,
-            other_info: req.body.otherInfo
-          }])
-          .select();
-
-        if (error) throw error;
-        return res.status(200).json({ result: 'success', id: data[0].id });
-      }
-
-      // 2. Update course
-      else if (action === 'update_course') {
-        const { error } = await dbClient
-          .from('courses')
-          .update({
-            category: req.body.category,
-            title: req.body.title,
-            date: req.body.date,
-            place: req.body.place,
-            capacity: parseInt(req.body.capacity) || 0,
-            deadline: req.body.deadline || null,
-            target: req.body.target,
-            goal: req.body.goal,
-            content: req.body.content,
-            instructor: req.body.instructor,
-            contact: req.body.contact,
-            payment_info: req.body.paymentInfo,
-            other_info: req.body.otherInfo
-          })
-          .eq('id', req.body.id);
-
-        if (error) throw error;
-        return res.status(200).json({ result: 'success' });
-      }
-
-      // 3. Delete course
-      else if (action === 'delete_course') {
-        const { error } = await dbClient
-          .from('courses')
-          .delete()
-          .eq('id', req.body.id);
-
-        if (error) throw error;
-        return res.status(200).json({ result: 'success' });
-      }
-
-      // 4. Submit applicant registration (No action/default action)
-      else {
-        const courseTitle = req.body.course;
-        if (!courseTitle) {
-          return res.status(400).json({ result: 'error', msg: 'Missing course title.' });
-        }
-
-        // Find course ID by title
-        const { data: courseData, error: courseError } = await dbClient
-          .from('courses')
-          .select('id')
-          .eq('title', courseTitle.trim())
-          .limit(1);
-
-        if (courseError) throw courseError;
-        if (!courseData || courseData.length === 0) {
-          return res.status(404).json({ result: 'error', msg: '해당 과정을 찾을 수 없습니다.' });
-        }
-
-        const courseId = courseData[0].id;
-
-        // Insert registration record to Supabase
-        const { error: applyError } = await dbClient
-          .from('education_apply')
-          .insert([{
-            course_id: courseId,
-            company: req.body.bizName,
-            biz_no: req.body.bizNo,
-            dept: req.body.dept,
-            position: req.body.position,
-            name: req.body.name,
-            phone: req.body.phone,
-            email: req.body.email,
-            agree_privacy: req.body.privacy === '동의함' || req.body.privacy === 'true' || req.body.privacy === true
-          }]);
-
-        if (applyError) throw applyError;
-
-        // Sync registration to Google Sheets (if configured)
-        const googleScriptUrl = process.env.GOOGLE_SCRIPT_URL;
-        if (googleScriptUrl) {
-          try {
-            const formBody = new URLSearchParams({
-              course: req.body.course,
-              bizName: req.body.bizName,
-              bizNo: req.body.bizNo,
-              dept: req.body.dept,
-              position: req.body.position,
-              name: req.body.name,
-              phone: req.body.phone,
-              email: req.body.email,
-              privacy: req.body.privacy
-            });
-
-            await fetch(googleScriptUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-              },
-              body: formBody
-            });
-          } catch (syncErr) {
-            console.error('Failed to sync to Google Sheets:', syncErr);
-            // Non-blocking: we do not fail the request if Google Sheets sync fails
+      } else if (typeof data === 'object' && data !== null) {
+        const filteredData = {};
+        Object.keys(data).forEach(key => {
+          if (key === 'result' || key === 'msg') {
+            filteredData[key] = data[key];
+            return;
           }
-        }
 
-        return res.status(200).json({ result: 'success' });
+          const item = data[key];
+          if (typeof item === 'object' && item !== null) {
+            const filteredItem = {};
+            ALLOWED_FIELDS.forEach(field => {
+              if (item[field] !== undefined) filteredItem[field] = item[field];
+            });
+            filteredData[key] = filteredItem;
+          }
+        });
+        data = filteredData;
       }
-    } catch (err) {
-      console.error('Database POST Error:', err);
-      return res.status(500).json({ result: 'error', msg: err.message });
     }
-  }
 
-  return res.status(405).json({ result: 'error', msg: 'Method Not Allowed' });
-}
+    res.status(200).json(data);
+  } catch (error) {
+    console.error('Proxy Error:', error);
+    res.status(500).json({ result: 'error', msg: error.message });
+  }
+};
