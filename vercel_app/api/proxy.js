@@ -80,6 +80,7 @@ module.exports = async function handler(req, res) {
   if (req.method === 'GET') {
     try {
       if (isPublic) {
+        res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=3600");
         // Query the public view which has the pre-calculated applicant counts
         const { data: courses, error } = await dbClient
           .from('public_courses')
