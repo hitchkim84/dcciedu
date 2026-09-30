@@ -12,6 +12,7 @@ module.exports = function handler(req, res) {
     return;
   }
 
+  res.setHeader("Cache-Control", "s-maxage=86400, stale-while-revalidate=86400");
   res.status(200).json({
     supabaseUrl: process.env.SUPABASE_URL || "",
     supabaseKey: process.env.SUPABASE_KEY || "",
