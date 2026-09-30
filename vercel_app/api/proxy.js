@@ -102,6 +102,7 @@ module.exports = async function handler(req, res) {
             goal: course.goal || "",
             content: course.content || "",
             instructor: course.instructor || "",
+            instructorBio: course.instructor_bio || "",
             contact: course.contact || "",
             paymentInfo: course.payment_info || "",
             otherInfo: course.other_info || "",
@@ -146,6 +147,7 @@ module.exports = async function handler(req, res) {
             goal: course.goal || "",
             content: course.content || "",
             instructor: course.instructor || "",
+            instructorBio: course.instructor_bio || "",
             contact: course.contact || "",
             paymentInfo: course.payment_info || "",
             otherInfo: course.other_info || "",
@@ -181,6 +183,7 @@ module.exports = async function handler(req, res) {
             goal: req.body.goal,
             content: req.body.content,
             instructor: req.body.instructor,
+            instructor_bio: req.body.instructorBio,
             contact: req.body.contact,
             payment_info: req.body.paymentInfo,
             other_info: req.body.otherInfo
@@ -206,6 +209,7 @@ module.exports = async function handler(req, res) {
             goal: req.body.goal,
             content: req.body.content,
             instructor: req.body.instructor,
+            instructor_bio: req.body.instructorBio,
             contact: req.body.contact,
             payment_info: req.body.paymentInfo,
             other_info: req.body.otherInfo

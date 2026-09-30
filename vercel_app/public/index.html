@@ -235,8 +235,9 @@
                         <div>
                             <h3 class="text-lg font-bold text-gray-900 mb-3 flex items-center"><span
                                     class="w-1.5 h-1.5 bg-blue-900 rounded-full mr-2"></span>강사</h3>
-                            <div id="detail-instructor" class="text-gray-900 font-medium pl-2"></div>
-                        </div>
+                            <div id="detail-instructor" class="text-gray-900 font-medium pl-2 mb-2"></div>
+                              <div id="detail-instructorBio" class="text-gray-600 text-sm pl-2 whitespace-pre-wrap"></div>
+                          </div>
                         <div>
                             <h3 class="text-lg font-bold text-gray-900 mb-3 flex items-center"><span
                                     class="w-1.5 h-1.5 bg-blue-900 rounded-full mr-2"></span>주요 내용</h3>
@@ -769,7 +770,7 @@
             const { isClosed, cap, cur } = getCourseStatus(data);
 
             // 필드 매핑
-            const fields = ['category', 'title', 'date', 'place', 'target', 'goal', 'instructor', 'content'];
+            const fields = ['category', 'title', 'date', 'place', 'target', 'goal', 'instructor', 'instructorBio', 'content'];
             fields.forEach(f => document.getElementById(`detail-${f}`).innerText = data[f] || '');
             
             document.getElementById('detail-payment-info').innerText = data.paymentInfo || "무료 / 별도 문의";

@@ -12,6 +12,7 @@ create table courses (
   goal text,
   content text,
   instructor text,
+  instructor_bio text,
   contact text,
   payment_info text,
   other_info text
@@ -103,6 +104,7 @@ select
   goal,
   content,
   instructor,
+  instructor_bio,
   contact,
   payment_info,
   other_info,
@@ -111,3 +113,7 @@ from courses;
 
 -- 뷰에 대한 읽기 권한을 anon(비로그인), authenticated(로그인) 역할 모두에게 부여
 grant select on public_courses to anon, authenticated;
+
+
+-- Migration for existing database:
+-- ALTER TABLE courses ADD COLUMN IF NOT EXISTS instructor_bio text;
