@@ -32,9 +32,9 @@
 3. **환경 분리 세팅**: Netlify 대시보드의 Environment variables에서 "Contexts"를 활용하여, Production 환경에는 실제 운영 DB 정보를, Deploy Previews 및 Branch Deploys에는 테스트용 DB 정보를 입력합니다.
 4. **테스트 흐름**: 기능 수정 시 dev 브랜치에 Push하거나 Pull Request를 생성하면 Netlify가 자동으로 임시 주소(Deploy Preview)를 만들어 배포합니다. 이곳에서 테스트 DB로 안전하게 검증을 마친 후 main에 병합(Merge)하여 운영에 반영합니다.
 
-## 6. 관리자 로그인 (구글)
-- 관리자 페이지는 "Google로 로그인"(Supabase OAuth)을 사용합니다. 관리자 역할(`app_metadata.role = 'admin'`)이 있는 계정만 들어갈 수 있습니다.
-- 설정 위치: Google Cloud Console OAuth 클라이언트(승인된 리디렉션 URI = Supabase 콜백 URL), Supabase Authentication → Providers → Google, URL Configuration(사이트 주소와 `/admin`, `/admin.html`).
+## 6. 관리자 로그인
+- 관리자 페이지는 이메일·비밀번호로 로그인합니다. 관리자 역할(`app_metadata.role = 'admin'`)이 있는 계정만 들어갈 수 있습니다.
+- 비밀번호 변경은 Supabase SQL Editor에서 합니다. 실제 이메일·비밀번호는 저장소에 적지 않습니다.
 
 ## 6-1. 테스트 가이드
 - 별도의 테스트용 Supabase 프로젝트(무료)를 생성한 뒤, 위 '테스트 배포' 환경변수에 연결하여 모의 검증을 진행하는 것을 권장합니다.
