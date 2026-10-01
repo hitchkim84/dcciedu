@@ -29,7 +29,21 @@ function formatTimestamp(isoString) {
   }
 }
 
-module.exports = async function handler(req, res) {
+exports.handler = async function(event, context) {
+function jsonRes(code, data, extraHeaders = {}) {
+    return {
+        statusCode: code,
+        headers: {
+            'Access-Control-Allow-Credentials': true,
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET,OPTIONS,PATCH,DELETE,POST,PUT',
+            'Access-Control-Allow-Headers': 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization',
+            ...extraHeaders
+        },
+        body: JSON.stringify(data)
+    };
+}
+let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){reqBody=Object.fromEntries(new URLSearchParams(event.body))}}
   // CORS headers
   
   
@@ -332,6 +346,7 @@ module.exports = async function handler(req, res) {
 
   return return jsonRes(405, { result: 'error', msg: 'Method Not Allowed' });
 }
+
 
 
 
