@@ -1,46 +1,8 @@
--- 1. 조회 기능 및 멱등성 컬럼 추가
-ALTER TABLE education_apply ADD COLUMN IF NOT EXISTS lookup_id text UNIQUE;
-ALTER TABLE education_apply ADD COLUMN IF NOT EXISTS lookup_password_hash text;
-ALTER TABLE education_apply ADD COLUMN IF NOT EXISTS failed_attempts int DEFAULT 0;
-ALTER TABLE education_apply ADD COLUMN IF NOT EXISTS locked_until timestamp with time zone;
+-- 02. atomic_course_apply 마감일 판정 수정 (운영 DB 적용은 지시 후)
+-- 기존: courses.deadline(date)을 UTC 자정으로 해석해 마감일 다음 날 KST 08:59:59까지 접수됨
+-- 수정: 마감일 당일 KST 23:59:59까지만 접수
+-- 01_setup.sql의 함수와 동일한 시그니처이며, 이 함수만 교체한다.
 
-ALTER TABLE education_apply ADD COLUMN IF NOT EXISTS sync_status text DEFAULT 'pending';
-ALTER TABLE education_apply ADD COLUMN IF NOT EXISTS sync_error text;
-ALTER TABLE education_apply ADD COLUMN IF NOT EXISTS sync_retries int DEFAULT 0;
-ALTER TABLE education_apply ADD COLUMN IF NOT EXISTS req_id text;
-
-ALTER TABLE education_apply DROP CONSTRAINT IF EXISTS unique_req_id;
-ALTER TABLE education_apply ADD CONSTRAINT unique_req_id UNIQUE(req_id);
-
--- 2. 기존 테이블에 걸려있던 모든 정책(Policy) 완벽 삭제
-DO $$ 
-DECLARE 
-    r RECORD;
-BEGIN 
-    FOR r IN (SELECT policyname FROM pg_policies WHERE tablename = 'courses') LOOP
-        EXECUTE format('DROP POLICY IF EXISTS %I ON courses', r.policyname);
-    END LOOP;
-    FOR r IN (SELECT policyname FROM pg_policies WHERE tablename = 'education_apply') LOOP
-        EXECUTE format('DROP POLICY IF EXISTS %I ON education_apply', r.policyname);
-    END LOOP;
-END $$;
-
--- 3. RLS 활성화 및 강력한 정책 재설정
-ALTER TABLE education_apply ENABLE ROW LEVEL SECURITY;
-ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
-
--- 3-1. Courses
-CREATE POLICY "Allow public read access on courses" ON courses FOR SELECT USING (true);
-CREATE POLICY "Allow admin to insert courses" ON courses FOR INSERT WITH CHECK (auth.jwt() -> 'app_metadata' ->> 'role' = 'admin');
-CREATE POLICY "Allow admin to update courses" ON courses FOR UPDATE USING (auth.jwt() -> 'app_metadata' ->> 'role' = 'admin');
-CREATE POLICY "Allow admin to delete courses" ON courses FOR DELETE USING (auth.jwt() -> 'app_metadata' ->> 'role' = 'admin');
-
--- 3-2. Education Apply
-CREATE POLICY "Disable direct insert on education_apply" ON education_apply FOR INSERT WITH CHECK (false);
-CREATE POLICY "Allow admin to read applications" ON education_apply FOR SELECT USING (auth.jwt() -> 'app_metadata' ->> 'role' = 'admin');
-CREATE POLICY "Allow admin to update applications" ON education_apply FOR UPDATE USING (auth.jwt() -> 'app_metadata' ->> 'role' = 'admin');
-
--- 4. 원자적 트랜잭션 함수 (RPC)
 CREATE OR REPLACE FUNCTION atomic_course_apply(
   p_course_id uuid,
   p_req_id text,
