@@ -461,7 +461,7 @@
 
     <script>
         /**
-         * [설정] Vercel 배포용 프록시 URL
+         * [설정] Netlify Functions 프록시 URL (netlify.toml에서 /api/* → 함수로 연결)
          */
         const scriptURL = '/api/proxy';
         let courseData = {};
@@ -544,7 +544,7 @@
                 } else {
                     console.log("NAVER_CLIENT_ID environment variable not found. Showing fallback link.");
                     const fallbackMsg = document.querySelector('#map-fallback p');
-                    if (fallbackMsg) fallbackMsg.innerHTML = "네이버 지도 API 키 설정이 되어있지 않습니다.<br>Vercel의 NAVER_CLIENT_ID 설정을 확인해주세요.";
+                    if (fallbackMsg) fallbackMsg.innerHTML = "네이버 지도 API 키 설정이 되어있지 않습니다.<br>Netlify 환경변수의 NAVER_CLIENT_ID 설정을 확인해주세요.";
                 }
             } catch (e) {
                 console.error("Failed to fetch config:", e);
