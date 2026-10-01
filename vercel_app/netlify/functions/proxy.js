@@ -1,4 +1,4 @@
-const { createClient } = require('@supabase/supabase-js');
+﻿const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
 
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -98,7 +98,7 @@ if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' 
     try {
       if (isPublic) {
         headers['Cache-Control'] = 's-maxage=30, stale-while-revalidate=3600';
-        const { data: courses, error } = await dbClient.from('public_courses').select('*');
+        const { data: courses, error } = await adminDbClient.from('courses').select('*, education_apply(id)').order('created_at', { ascending: false });
         if (error) throw error;
         
         const responseData = {};
@@ -116,7 +116,7 @@ if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' 
               content: course.content || "", instructor: course.instructor || "",
               instructorBio: course.instructor_bio || "", contact: course.contact || "",
               cost: cost, paymentInfo: paymentInfo, otherInfo: course.other_info || "",
-              current: course.current_applicants || course.current || 0
+              current: (course.education_apply || []).length
             };
         });
         return jsonRes(200, responseData);
@@ -140,7 +140,7 @@ if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' 
                 bizName: app.company || "", bizNo: app.biz_no || "",
                 dept: app.dept || "", position: app.position || "",
                 name: app.name || "", phone: app.phone || "",
-                email: app.email || "", privacy: app.agree_privacy ? "?�의?? : "미동??,
+                email: app.email || "", privacy: app.agree_privacy ? "?�의?? : "미동??,
                 syncStatus: app.sync_status || "pending", syncError: app.sync_error || ""
             })).sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1));
 
@@ -172,7 +172,7 @@ if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' 
       // --- Admin Actions ---
       if (['add_course', 'update_course', 'delete_course', 'retry_sync'].includes(action)) {
           if (isPublic || !isAdmin) {
-             return jsonRes(403, { result: 'error', msg: '관리자 권한???�요?�니??' });
+             return jsonRes(403, { result: 'error', msg: '관리자 권한???�요?�니??' });
           }
 
           if (action === 'add_course') {
@@ -217,10 +217,10 @@ if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' 
                   .select('*, courses(title)')
                   .eq('id', apply_id).single();
 
-              if (error || !applyData) return jsonRes(404, { result: 'error', msg: '?�청 ?�역 ?�음' });
+              if (error || !applyData) return jsonRes(404, { result: 'error', msg: '?�청 ?�역 ?�음' });
 
               const googleScriptUrl = process.env.GOOGLE_SCRIPT_URL;
-              if (!googleScriptUrl) return jsonRes(500, { result: 'error', msg: '구�? ?�트 ?�동 URL 미설?? });
+              if (!googleScriptUrl) return jsonRes(500, { result: 'error', msg: '구�? ?�트 ?�동 URL 미설?? });
 
               try {
                 const formBody = new URLSearchParams({
@@ -229,7 +229,7 @@ if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' 
                   course: applyData.courses.title,
                   bizName: applyData.company, bizNo: applyData.biz_no, dept: applyData.dept,
                   position: applyData.position, name: applyData.name, phone: applyData.phone,
-                  email: applyData.email, privacy: applyData.agree_privacy ? "?�의?? : "미동??,
+                  email: applyData.email, privacy: applyData.agree_privacy ? "?�의?? : "미동??,
                   secret: process.env.APPS_SCRIPT_SECRET || ""
                 });
                 const syncRes = await fetch(googleScriptUrl, {
@@ -242,7 +242,7 @@ if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' 
                 return jsonRes(200, { result: 'success' });
               } catch (syncErr) {
                 await adminDbClient.from('education_apply').update({ sync_status: 'failed', sync_error: syncErr.message, sync_retries: (applyData.sync_retries || 0) + 1 }).eq('id', apply_id);
-                return jsonRes(500, { result: 'error', msg: '구�? ?�트 ?�동 ?�패: ' + syncErr.message });
+                return jsonRes(500, { result: 'error', msg: '구�? ?�트 ?�동 ?�패: ' + syncErr.message });
               }
           }
       }
@@ -255,11 +255,11 @@ if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' 
         // Rate limit check
         const { data: rlData, error: rlError } = await adminDbClient.rpc('check_rate_limit', { p_ip: clientIp });
         if (rlError || !rlData) {
-            return jsonRes(429, { result: 'error', msg: '?�무 많�? ?�청??발생?�습?�다. ?�시 ???�시 ?�도?�주?�요.' });
+            return jsonRes(429, { result: 'error', msg: '?�무 많�? ?�청??발생?�습?�다. ?�시 ???�시 ?�도?�주?�요.' });
         }
 
         const { lookup_id, lookup_password } = reqBody;
-        const genericError = '?�청 ?�보�?찾을 ???�거??비�?번호가 ?�치?��? ?�습?�다.';
+        const genericError = '?�청 ?�보�?찾을 ???�거??비�?번호가 ?�치?��? ?�습?�다.';
         
         if (!lookup_id || !lookup_password) {
             return jsonRes(401, { result: 'error', msg: genericError });
@@ -297,15 +297,15 @@ if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' 
                 place: applyData.courses.place,
                 nameMasked: nameMasked,
                 submittedAt: formatTimestamp(applyData.created_at),
-                contact: applyData.courses.contact || '?�구상공회?�소 교육?�당??(053-222-3109)'
+                contact: applyData.courses.contact || '?�구상공회?�소 교육?�당??(053-222-3109)'
             }
         });
       }
 
       else if (action === 'apply') {
         const { course_id, req_id, password } = reqBody;
-        if (!course_id || !req_id) return jsonRes(400, { result: 'error', msg: '?�수 ?�청 ?�별?��? ?�락?�었?�니??' });
-        if (!password || password.length < 4) return jsonRes(400, { result: 'error', msg: '비�?번호??4?�리 ?�상?�어???�니??' });
+        if (!course_id || !req_id) return jsonRes(400, { result: 'error', msg: '?�수 ?�청 ?�별?��? ?�락?�었?�니??' });
+        if (!password || password.length < 4) return jsonRes(400, { result: 'error', msg: '비�?번호??4?�리 ?�상?�어???�니??' });
 
         const lookupId = crypto.randomBytes(3).toString('hex').toUpperCase() + '-' + crypto.randomBytes(2).toString('hex').toUpperCase();
         const pwdHash = hashPassword(password);
@@ -315,7 +315,7 @@ if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' 
             p_company: reqBody.bizName, p_biz_no: reqBody.bizNo, p_dept: reqBody.dept,
             p_position: reqBody.position, p_name: reqBody.name, p_phone: reqBody.phone,
             p_email: reqBody.email,
-            p_agree_privacy: reqBody.privacy === '?�의?? || reqBody.privacy === 'true' || reqBody.privacy === true,
+            p_agree_privacy: reqBody.privacy === '?�의?? || reqBody.privacy === 'true' || reqBody.privacy === true,
             p_lookup_id: lookupId, p_lookup_password_hash: pwdHash
         });
 
@@ -337,7 +337,7 @@ if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' 
               course: finalCourseTitle,
               bizName: finalData.company, bizNo: finalData.biz_no, dept: finalData.dept,
               position: finalData.position, name: finalData.name, phone: finalData.phone,
-              email: finalData.email, privacy: finalData.agree_privacy ? "������" : "�̵���",
+              email: finalData.email, privacy: finalData.agree_privacy ? "������" : "�̵���",
               secret: process.env.APPS_SCRIPT_SECRET || ""
             });
             const syncRes = await fetch(googleScriptUrl, {
@@ -358,11 +358,11 @@ if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' 
       
       // Invalid action
       else {
-        return jsonRes(400, { result: 'error', msg: '?�효?��? ?��? ?�청?�니??' });
+        return jsonRes(400, { result: 'error', msg: '?�효?��? ?��? ?�청?�니??' });
       }
 
     } catch (err) {
-      return jsonRes(500, { result: 'error', msg: '?�버 ?��? ?�류가 발생?�습?�다.' });
+      return jsonRes(500, { result: 'error', msg: '?�버 ?��? ?�류가 발생?�습?�다.' });
     }
   }
 
