@@ -343,6 +343,11 @@
                         sessionToken = null;
                         document.getElementById('login-modal').classList.remove('hidden');
                         document.getElementById('admin-content').classList.add('hidden');
+                        
+                        // 보안: 로그아웃 시 개인정보 데이터 메모리 및 화면에서 삭제
+                        document.getElementById('status-body').innerHTML = '';
+                        document.getElementById('manage-body').innerHTML = '';
+                        allCourses = {};
                     }
                 });
 
