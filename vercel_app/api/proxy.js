@@ -91,24 +91,36 @@ module.exports = async function handler(req, res) {
         // Map to response format
         const responseData = {};
         courses.forEach(course => {
-          responseData[course.id] = {
-            id: course.id,
-            category: course.category || "",
-            title: course.title || "",
-            date: course.date || "",
-            place: course.place || "",
-            capacity: course.capacity || 0,
-            deadline: course.deadline || "",
-            target: course.target || "",
-            goal: course.goal || "",
-            content: course.content || "",
-            instructor: course.instructor || "",
-            instructorBio: course.instructor_bio || "",
-            contact: course.contact || "",
-            paymentInfo: course.payment_info || "",
-            otherInfo: course.other_info || "",
-            current: course.current || 0
-          };
+            let cost = "무료 / 별도 문의";
+            let paymentInfo = course.payment_info || "";
+            if (paymentInfo.includes('|||')) {
+              const parts = paymentInfo.split('|||');
+              cost = parts[0];
+              paymentInfo = parts[1];
+            } else {
+              // Backward compatibility: use the whole string for both if no delimiter (since we just deployed that)
+              cost = paymentInfo;
+            }
+
+            responseData[course.id] = {
+              id: course.id,
+              category: course.category || "",
+              title: course.title || "",
+              date: course.date || "",
+              place: course.place || "",
+              capacity: course.capacity || 0,
+              deadline: course.deadline || "",
+              target: course.target || "",
+              goal: course.goal || "",
+              content: course.content || "",
+              instructor: course.instructor || "",
+              instructorBio: course.instructor_bio || "",
+              contact: course.contact || "",
+              cost: cost,
+              paymentInfo: paymentInfo,
+              otherInfo: course.other_info || "",
+              current: course.current || 0
+            };
         });
         return res.status(200).json(responseData);
       } else {
@@ -136,6 +148,16 @@ module.exports = async function handler(req, res) {
             councilType: ""
           }));
 
+          let cost = "무료 / 별도 문의";
+          let paymentInfo = course.payment_info || "";
+          if (paymentInfo.includes('|||')) {
+              const parts = paymentInfo.split('|||');
+              cost = parts[0];
+              paymentInfo = parts[1];
+          } else {
+              cost = paymentInfo;
+          }
+
           responseData[course.id] = {
             id: course.id,
             category: course.category || "",
@@ -150,7 +172,8 @@ module.exports = async function handler(req, res) {
             instructor: course.instructor || "",
             instructorBio: course.instructor_bio || "",
             contact: course.contact || "",
-            paymentInfo: course.payment_info || "",
+            cost: cost,
+            paymentInfo: paymentInfo,
             otherInfo: course.other_info || "",
             current: apps.length,
             applicants: apps
@@ -186,7 +209,7 @@ module.exports = async function handler(req, res) {
             instructor: req.body.instructor,
             instructor_bio: req.body.instructorBio,
             contact: req.body.contact,
-            payment_info: req.body.paymentInfo,
+            payment_info: (req.body.cost || "") + "|||" + (req.body.paymentInfo || ""),
             other_info: req.body.otherInfo
           }])
           .select();
@@ -212,7 +235,7 @@ module.exports = async function handler(req, res) {
             instructor: req.body.instructor,
             instructor_bio: req.body.instructorBio,
             contact: req.body.contact,
-            payment_info: req.body.paymentInfo,
+            payment_info: (req.body.cost || "") + "|||" + (req.body.paymentInfo || ""),
             other_info: req.body.otherInfo
           })
           .eq('id', req.body.id);

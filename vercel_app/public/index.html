@@ -778,7 +778,7 @@
             fields.forEach(f => document.getElementById(`detail-${f}`).innerText = data[f] || '');
             
             document.getElementById('detail-payment-info').innerText = data.paymentInfo || "무료 / 별도 문의";
-            document.getElementById('detail-cost').innerText = data.paymentInfo || "무료 / 별도 문의";
+            document.getElementById('detail-cost').innerText = data.cost || "무료 / 별도 문의";
             document.getElementById('detail-other-info').innerText = data.otherInfo || "없음";
             document.getElementById('detail-contact').innerText = data.contact || "기업지원부 통상진흥팀 (053-222-3109)";
             document.getElementById('detail-capacity').innerText = cap > 0 ? `신청 ${cur}명 / 정원 ${cap}명` : "제한 없음";
