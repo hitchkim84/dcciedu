@@ -296,9 +296,9 @@
                     </svg>
                 </div>
                 <h2 class="text-2xl font-bold text-gray-900">관리자 로그인</h2>
-                <p class="text-sm text-gray-500 mt-2">접근 권한을 확인하기 위해 이메일과 비밀번호를 입력해주세요.</p>
+                <p id="login-desc" class="text-sm text-gray-500 mt-2">접근 권한을 확인하기 위해 이메일과 비밀번호를 입력해주세요.</p>
             </div>
-            <form onsubmit="event.preventDefault(); tryLogin();" class="space-y-4">
+            <form id="login-form" onsubmit="event.preventDefault(); tryLogin();" class="space-y-4">
                 <div>
                     <label for="login-email" class="block text-sm font-medium text-gray-700 mb-1">이메일</label>
                     <input type="email" id="login-email" required
@@ -315,6 +315,26 @@
                     class="w-full bg-blue-900 text-white font-bold py-3 px-4 rounded-xl hover:bg-blue-800 transition-colors shadow-lg transform active:scale-95 mt-2">
                     로그인
                 </button>
+            </form>
+
+            <!-- 2단계 인증(OTP): 비밀번호 로그인 후 표시. 처음에는 등록(QR), 이후에는 6자리 코드 입력 -->
+            <form id="mfa-panel" class="hidden space-y-4" onsubmit="event.preventDefault(); verifyMfa();">
+                <div id="mfa-enroll" class="hidden text-center space-y-3">
+                    <p class="text-sm text-gray-700">휴대폰 인증 앱(Google Authenticator 등)으로 아래 QR 코드를 찍어 등록하세요.</p>
+                    <img id="mfa-qr" alt="OTP 등록 QR 코드" class="mx-auto w-44 h-44 bg-white border rounded-lg">
+                    <p class="text-xs text-gray-500">QR을 찍을 수 없으면 앱에 이 키를 직접 입력하세요.<br><code id="mfa-secret" class="break-all text-gray-800"></code></p>
+                </div>
+                <div>
+                    <label for="mfa-code" class="block text-sm font-medium text-gray-700 mb-1">인증 앱의 6자리 코드</label>
+                    <input type="text" id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required
+                        class="w-full px-4 py-2.5 rounded-lg border border-gray-300 text-center text-xl tracking-widest focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="000000">
+                </div>
+                <button type="submit" id="mfa-submit"
+                    class="w-full bg-blue-900 text-white font-bold py-3 px-4 rounded-xl hover:bg-blue-800 transition-colors shadow-lg">
+                    확인
+                </button>
+                <button type="button" onclick="logout()" class="w-full text-sm text-gray-500 hover:text-gray-700">취소하고 로그아웃</button>
             </form>
         </div>
     </div>
@@ -341,8 +361,9 @@
                 supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
 
                 // Listen to auth state changes
+                // 콜백 안에서 Supabase 함수를 바로 부르면 멈출 수 있어 다음 차례로 미룬다.
                 supabaseClient.auth.onAuthStateChange((event, session) => {
-                    applySession(session);
+                    setTimeout(() => applySession(session), 0);
                 });
 
                 // Check current session
@@ -356,6 +377,18 @@
         }
 
         // 로그인 상태를 화면에 반영한다. 관리자 역할이 없는 계정은 바로 로그아웃시킨다.
+        // JWT 안의 정보(관리자 역할, 인증 단계 aal)를 읽는다. 검증은 서버와 DB가 다시 한다.
+        function jwtClaims(token) {
+            try {
+                const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+                return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4)));
+            } catch (e) {
+                return {};
+            }
+        }
+
+        let mfaFactorId = null; // 등록 또는 입력 중인 OTP 인증 수단 ID
+
         function applySession(session) {
             if (session && (session.user.app_metadata || {}).role !== 'admin') {
                 applySession(null);
@@ -363,6 +396,15 @@
                 supabaseClient.auth.signOut();
                 return;
             }
+            // 비밀번호만 통과한 상태(aal1)면 명단을 보여주지 않고 OTP 단계로 보낸다.
+            if (session && jwtClaims(session.access_token).aal !== 'aal2') {
+                sessionToken = null;
+                document.getElementById('admin-content').classList.add('hidden');
+                document.getElementById('login-modal').classList.remove('hidden');
+                showMfa();
+                return;
+            }
+            hideMfa();
             if (session) {
                 const isNew = sessionToken !== session.access_token;
                 sessionToken = session.access_token;
@@ -383,6 +425,76 @@
         }
 
         window.onload = initSupabase;
+
+        function hideMfa() {
+            mfaFactorId = null;
+            document.getElementById('mfa-panel').classList.add('hidden');
+            document.getElementById('mfa-enroll').classList.add('hidden');
+            document.getElementById('mfa-qr').removeAttribute('src');
+            document.getElementById('mfa-secret').textContent = '';
+            document.getElementById('mfa-code').value = '';
+            document.getElementById('login-form').classList.remove('hidden');
+            document.getElementById('login-desc').textContent = '접근 권한을 확인하기 위해 이메일과 비밀번호를 입력해주세요.';
+        }
+
+        // OTP 단계: 등록된 인증 앱이 있으면 코드 입력, 없으면 QR 등록부터
+        let mfaLoading = false; // 같은 화면을 두 번 준비하지 않도록 (중복 등록 방지)
+        async function showMfa() {
+            if (mfaLoading || (!document.getElementById('mfa-panel').classList.contains('hidden') && mfaFactorId)) return;
+            mfaLoading = true;
+            document.getElementById('login-form').classList.add('hidden');
+            document.getElementById('mfa-panel').classList.remove('hidden');
+            try {
+                const { data, error } = await supabaseClient.auth.mfa.listFactors();
+                if (error) throw error;
+                const verified = data.totp || [];
+                if (verified.length > 0) {
+                    mfaFactorId = verified[0].id;
+                    document.getElementById('mfa-enroll').classList.add('hidden');
+                    document.getElementById('login-desc').textContent = '2단계 인증: 인증 앱에 표시된 6자리 코드를 입력해주세요.';
+                } else {
+                    // 끝내지 못한 이전 등록이 있으면 지우고 새로 등록한다.
+                    for (const f of (data.all || [])) {
+                        if (f.factor_type === 'totp' && f.status !== 'verified') {
+                            await supabaseClient.auth.mfa.unenroll({ factorId: f.id });
+                        }
+                    }
+                    const { data: enrolled, error: enrollError } = await supabaseClient.auth.mfa.enroll({ factorType: 'totp', friendlyName: '관리자 OTP' });
+                    if (enrollError) throw enrollError;
+                    mfaFactorId = enrolled.id;
+                    document.getElementById('mfa-qr').src = enrolled.totp.qr_code;
+                    document.getElementById('mfa-secret').textContent = enrolled.totp.secret;
+                    document.getElementById('mfa-enroll').classList.remove('hidden');
+                    document.getElementById('login-desc').textContent = '2단계 인증 등록: 처음 한 번만 하면 됩니다.';
+                }
+                document.getElementById('mfa-code').focus();
+            } catch (err) {
+                alert('2단계 인증을 준비하지 못했습니다: ' + err.message);
+                logout();
+            } finally {
+                mfaLoading = false;
+            }
+        }
+
+        async function verifyMfa() {
+            const codeInput = document.getElementById('mfa-code');
+            const code = codeInput.value.trim();
+            if (!/^[0-9]{6}$/.test(code) || !mfaFactorId) return alert('6자리 숫자를 입력해주세요.');
+            const btn = document.getElementById('mfa-submit');
+            btn.disabled = true;
+            try {
+                const { error } = await supabaseClient.auth.mfa.challengeAndVerify({ factorId: mfaFactorId, code });
+                if (error) throw error;
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                applySession(session);
+            } catch (err) {
+                alert('코드가 맞지 않습니다. 인증 앱의 현재 코드를 다시 입력해주세요.');
+                codeInput.value = '';
+                codeInput.focus();
+            } finally {
+                btn.disabled = false;
+            }
+        }
 
         // Login Handler
         async function tryLogin() {

@@ -54,6 +54,15 @@ function parseBody(event) {
   }
 }
 
+// 검증이 끝난 JWT의 내용(aal 등)을 읽는다. 서명 검증은 supabase.auth.getUser가 먼저 한다.
+function jwtClaims(token) {
+  try {
+    return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
+  } catch (e) {
+    return {};
+  }
+}
+
 function str(v) {
   return v === undefined || v === null ? '' : String(v).trim();
 }
@@ -249,6 +258,11 @@ exports.handler = async function(event, context) {
     // DB 규칙(RLS)과 별개로 서버에서도 관리자 역할을 확인한다 (이중 잠금).
     if (!user.app_metadata || user.app_metadata.role !== 'admin') {
       return jsonRes(403, { result: 'error', msg: '관리자 권한이 없습니다.' });
+    }
+
+    // 비밀번호만 통과한 로그인(aal1)은 거절하고, OTP까지 통과한 로그인(aal2)만 허용한다.
+    if (jwtClaims(token).aal !== 'aal2') {
+      return jsonRes(403, { result: 'error', msg: '2단계 인증(OTP)이 필요합니다.' });
     }
 
     try {
