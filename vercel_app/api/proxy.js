@@ -1,4 +1,4 @@
-﻿const { createClient } = require('@supabase/supabase-js');
+const { createClient } = require('@supabase/supabase-js');
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
@@ -37,29 +37,29 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
   // OPTIONS: Always Allow (CORS)
-  if (event.httpMethod === 'OPTIONS') {
+  if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
   if (!supabase) {
-    return return jsonRes(500, { result: 'error', msg: 'Server Configuration Error: Supabase client is not initialized. Please ensure SUPABASE_URL and SUPABASE_KEY environment variables are configured in the Vercel dashboard.' });
+    return res.status(500).json({ result: 'error', msg: 'Server Configuration Error: Supabase client is not initialized. Please ensure SUPABASE_URL and SUPABASE_KEY environment variables are configured in the Vercel dashboard.' });
   }
 
-  const isPublic = event.queryStringParameters.type === 'public';
+  const isPublic = req.query.type === 'public';
   let dbClient = supabase;
 
   if (!isPublic) {
-    const authHeader = event.headers['authorization'];
+    const authHeader = req.headers['authorization'];
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return return jsonRes(401, { result: 'error', msg: 'Unauthorized: Missing session token' });
+      return res.status(401).json({ result: 'error', msg: 'Unauthorized: Missing session token' });
     }
 
     const token = authHeader.split(' ')[1];
     const { data: { user }, error } = await supabase.auth.getUser(token);
 
     if (error || !user) {
-      return return jsonRes(401, { result: 'error', msg: 'Unauthorized: Invalid or expired session' });
+      return res.status(401).json({ result: 'error', msg: 'Unauthorized: Invalid or expired session' });
     }
 
     try {
@@ -72,12 +72,12 @@ module.exports = async function handler(req, res) {
       });
     } catch (clientErr) {
       console.error("Failed to create request-scoped client:", clientErr);
-      return return jsonRes(500, { result: 'error', msg: 'Failed to authenticate database client.' });
+      return res.status(500).json({ result: 'error', msg: 'Failed to authenticate database client.' });
     }
   }
 
   // GET Request: Fetch courses and applicants count/list
-  if (event.httpMethod === 'GET') {
+  if (req.method === 'GET') {
     try {
       if (isPublic) {
         res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=3600");
@@ -91,7 +91,7 @@ module.exports = async function handler(req, res) {
         // Map to response format
         const responseData = {};
         courses.forEach(course => {
-            let cost = "臾대즺 / 蹂꾨룄 臾몄쓽";
+            let cost = "무료 / 별도 문의";
             let paymentInfo = course.payment_info || "";
             if (paymentInfo.includes('|||')) {
               const parts = paymentInfo.split('|||');
@@ -122,7 +122,7 @@ module.exports = async function handler(req, res) {
               current: course.current || 0
             };
         });
-        return return jsonRes(200, responseData);
+        return res.status(200).json(responseData);
       } else {
         // Admin Request: Fetch courses and full applicant list
         const { data: courses, error } = await dbClient
@@ -142,13 +142,13 @@ module.exports = async function handler(req, res) {
             name: app.name || "",
             phone: app.phone || "",
             email: app.email || "",
-            privacy: app.agree_privacy ? "?숈쓽?? : "誘몃룞??,
+            privacy: app.agree_privacy ? "동의함" : "미동의",
             memberType: "",
             feeStatus: "",
             councilType: ""
           }));
 
-          let cost = "臾대즺 / 蹂꾨룄 臾몄쓽";
+          let cost = "무료 / 별도 문의";
           let paymentInfo = course.payment_info || "";
           if (paymentInfo.includes('|||')) {
               const parts = paymentInfo.split('|||');
@@ -179,43 +179,43 @@ module.exports = async function handler(req, res) {
             applicants: apps
           };
         });
-        return return jsonRes(200, responseData);
+        return res.status(200).json(responseData);
       }
     } catch (err) {
       console.error('Database GET Error:', err);
-      return return jsonRes(500, { result: 'error', msg: err.message });
+      return res.status(500).json({ result: 'error', msg: err.message });
     }
   }
 
   // POST Request: Add/Update/Delete courses or Submit application
-  if (event.httpMethod === 'POST') {
+  if (req.method === 'POST') {
     try {
-      const { action } = reqBody;
+      const { action } = req.body;
 
       // 1. Add course
       if (action === 'add_course') {
         const { data, error } = await dbClient
           .from('courses')
           .insert([{
-            category: reqBody.category,
-            title: reqBody.title,
-            date: reqBody.date,
-            place: reqBody.place,
-            capacity: parseInt(reqBody.capacity) || 0,
-            deadline: reqBody.deadline || null,
-            target: reqBody.target,
-            goal: reqBody.goal,
-            content: reqBody.content,
-            instructor: reqBody.instructor,
-            instructor_bio: reqBody.instructorBio,
-            contact: reqBody.contact,
-            payment_info: (reqBody.cost || "") + "|||" + (reqBody.paymentInfo || ""),
-            other_info: reqBody.otherInfo
+            category: req.body.category,
+            title: req.body.title,
+            date: req.body.date,
+            place: req.body.place,
+            capacity: parseInt(req.body.capacity) || 0,
+            deadline: req.body.deadline || null,
+            target: req.body.target,
+            goal: req.body.goal,
+            content: req.body.content,
+            instructor: req.body.instructor,
+            instructor_bio: req.body.instructorBio,
+            contact: req.body.contact,
+            payment_info: (req.body.cost || "") + "|||" + (req.body.paymentInfo || ""),
+            other_info: req.body.otherInfo
           }])
           .select();
 
         if (error) throw error;
-        return return jsonRes(200, { result: 'success', id: data[0].id });
+        return res.status(200).json({ result: 'success', id: data[0].id });
       }
 
       // 2. Update course
@@ -223,25 +223,25 @@ module.exports = async function handler(req, res) {
         const { error } = await dbClient
           .from('courses')
           .update({
-            category: reqBody.category,
-            title: reqBody.title,
-            date: reqBody.date,
-            place: reqBody.place,
-            capacity: parseInt(reqBody.capacity) || 0,
-            deadline: reqBody.deadline || null,
-            target: reqBody.target,
-            goal: reqBody.goal,
-            content: reqBody.content,
-            instructor: reqBody.instructor,
-            instructor_bio: reqBody.instructorBio,
-            contact: reqBody.contact,
-            payment_info: (reqBody.cost || "") + "|||" + (reqBody.paymentInfo || ""),
-            other_info: reqBody.otherInfo
+            category: req.body.category,
+            title: req.body.title,
+            date: req.body.date,
+            place: req.body.place,
+            capacity: parseInt(req.body.capacity) || 0,
+            deadline: req.body.deadline || null,
+            target: req.body.target,
+            goal: req.body.goal,
+            content: req.body.content,
+            instructor: req.body.instructor,
+            instructor_bio: req.body.instructorBio,
+            contact: req.body.contact,
+            payment_info: (req.body.cost || "") + "|||" + (req.body.paymentInfo || ""),
+            other_info: req.body.otherInfo
           })
-          .eq('id', reqBody.id);
+          .eq('id', req.body.id);
 
         if (error) throw error;
-        return return jsonRes(200, { result: 'success' });
+        return res.status(200).json({ result: 'success' });
       }
 
       // 3. Delete course
@@ -249,17 +249,17 @@ module.exports = async function handler(req, res) {
         const { error } = await dbClient
           .from('courses')
           .delete()
-          .eq('id', reqBody.id);
+          .eq('id', req.body.id);
 
         if (error) throw error;
-        return return jsonRes(200, { result: 'success' });
+        return res.status(200).json({ result: 'success' });
       }
 
       // 4. Submit applicant registration (No action/default action)
       else {
-        const courseTitle = reqBody.course;
+        const courseTitle = req.body.course;
         if (!courseTitle) {
-          return return jsonRes(400, { result: 'error', msg: 'Missing course title.' });
+          return res.status(400).json({ result: 'error', msg: 'Missing course title.' });
         }
 
         // Find course ID by title
@@ -271,7 +271,7 @@ module.exports = async function handler(req, res) {
 
         if (courseError) throw courseError;
         if (!courseData || courseData.length === 0) {
-          return return jsonRes(404, { result: 'error', msg: '?대떦 怨쇱젙??李얠쓣 ???놁뒿?덈떎.' });
+          return res.status(404).json({ result: 'error', msg: '해당 과정을 찾을 수 없습니다.' });
         }
 
         const courseId = courseData[0].id;
@@ -281,14 +281,14 @@ module.exports = async function handler(req, res) {
           .from('education_apply')
           .insert([{
             course_id: courseId,
-            company: reqBody.bizName,
-            biz_no: reqBody.bizNo,
-            dept: reqBody.dept,
-            position: reqBody.position,
-            name: reqBody.name,
-            phone: reqBody.phone,
-            email: reqBody.email,
-            agree_privacy: reqBody.privacy === '?숈쓽?? || reqBody.privacy === 'true' || reqBody.privacy === true
+            company: req.body.bizName,
+            biz_no: req.body.bizNo,
+            dept: req.body.dept,
+            position: req.body.position,
+            name: req.body.name,
+            phone: req.body.phone,
+            email: req.body.email,
+            agree_privacy: req.body.privacy === '동의함' || req.body.privacy === 'true' || req.body.privacy === true
           }]);
 
         if (applyError) throw applyError;
@@ -298,15 +298,15 @@ module.exports = async function handler(req, res) {
         if (googleScriptUrl) {
           try {
             const formBody = new URLSearchParams({
-              course: reqBody.course,
-              bizName: reqBody.bizName,
-              bizNo: reqBody.bizNo,
-              dept: reqBody.dept,
-              position: reqBody.position,
-              name: reqBody.name,
-              phone: reqBody.phone,
-              email: reqBody.email,
-              privacy: reqBody.privacy
+              course: req.body.course,
+              bizName: req.body.bizName,
+              bizNo: req.body.bizNo,
+              dept: req.body.dept,
+              position: req.body.position,
+              name: req.body.name,
+              phone: req.body.phone,
+              email: req.body.email,
+              privacy: req.body.privacy
             });
 
             await fetch(googleScriptUrl, {
@@ -322,14 +322,13 @@ module.exports = async function handler(req, res) {
           }
         }
 
-        return return jsonRes(200, { result: 'success' });
+        return res.status(200).json({ result: 'success' });
       }
     } catch (err) {
       console.error('Database POST Error:', err);
-      return return jsonRes(500, { result: 'error', msg: err.message });
+      return res.status(500).json({ result: 'error', msg: err.message });
     }
   }
 
-  return return jsonRes(405, { result: 'error', msg: 'Method Not Allowed' });
+  return res.status(405).json({ result: 'error', msg: 'Method Not Allowed' });
 }
-
