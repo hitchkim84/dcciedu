@@ -27,11 +27,23 @@ function resetDb() {
 }
 
 // ---- Supabase fake -------------------------------------------------------
+// JWT 형태의 가짜 토큰. who=admin/user, aal=aal1(비밀번호만)/aal2(OTP까지)
+function fakeJwt(payload) {
+  return 'h.' + Buffer.from(JSON.stringify(payload)).toString('base64url') + '.s';
+}
+function claimsOf(token) {
+  try { return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()); } catch (e) { return {}; }
+}
+const ADMIN_TOKEN = fakeJwt({ who: 'admin', aal: 'aal2' });
+const ADMIN_AAL1_TOKEN = fakeJwt({ who: 'admin', aal: 'aal1' });
+const USER_TOKEN = fakeJwt({ who: 'user', aal: 'aal2' });
+
 function roleOf(client) {
   if (client.key === 'service') return 'service';
   const auth = client.headers.Authorization || '';
-  if (auth === 'Bearer admin-token') return 'admin';
-  if (auth === 'Bearer user-token') return 'authenticated';
+  const who = claimsOf(auth.replace('Bearer ', '')).who;
+  if (who === 'admin') return 'admin';
+  if (who === 'user') return 'authenticated';
   return 'anon';
 }
 
@@ -132,8 +144,9 @@ function createClient(url, key, opts = {}) {
   client.rpc = async (name, params) => (name === 'atomic_course_apply' ? atomicCourseApply(params) : raise('unknown rpc'));
   client.auth = {
     async getUser(token) {
-      if (token === 'admin-token') return { data: { user: { id: 'u1', app_metadata: { role: 'admin' } } }, error: null };
-      if (token === 'user-token') return { data: { user: { id: 'u2', app_metadata: {} } }, error: null };
+      const who = claimsOf(token).who;
+      if (who === 'admin') return { data: { user: { id: 'u1', app_metadata: { role: 'admin' } } }, error: null };
+      if (who === 'user') return { data: { user: { id: 'u2', app_metadata: {} } }, error: null };
       return { data: { user: null }, error: { message: 'invalid token' } };
     }
   };
@@ -350,43 +363,53 @@ test('admin endpoints require a valid token', async () => {
   assert.strictEqual((await call(handler, { type: 'admin', token: 'bogus' })).statusCode, 401);
 });
 
+test('admin with password only (aal1, no OTP) is refused and sees no applicants', async () => {
+  const handler = loadHandler();
+  const res = await call(handler, { type: 'admin', token: ADMIN_AAL1_TOKEN });
+  assert.strictEqual(res.statusCode, 403);
+  assert.match(res.json.msg, /2단계/);
+  const del = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_AAL1_TOKEN, body: new URLSearchParams({ action: 'delete_course', id: COURSE_ID }).toString() });
+  assert.strictEqual(del.statusCode, 403);
+  assert.strictEqual(db.courses.length, 2);
+});
+
 test('admin GET returns applicants; logged-in non-admin is refused by the server', async () => {
   const handler = loadHandler();
-  const admin = await call(handler, { type: 'admin', token: 'admin-token' });
+  const admin = await call(handler, { type: 'admin', token: ADMIN_TOKEN });
   assert.strictEqual(admin.json[FULL_ID].applicants.length, 1);
-  const user = await call(handler, { type: 'admin', token: 'user-token' });
+  const user = await call(handler, { type: 'admin', token: USER_TOKEN });
   assert.strictEqual(user.statusCode, 403);
   assert.strictEqual(user.json.applicants, undefined);
 });
 
 test('admin add/update/delete course; non-admin gets 403 or error', async () => {
   const handler = loadHandler();
-  const add = await call(handler, { method: 'POST', type: 'admin', token: 'admin-token', body: new URLSearchParams({ action: 'add_course', title: '신규', capacity: '10', cost: '무료' }).toString() });
+  const add = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: new URLSearchParams({ action: 'add_course', title: '신규', capacity: '10', cost: '무료' }).toString() });
   assert.strictEqual(add.statusCode, 200);
   const id = add.json.id;
 
-  const upd = await call(handler, { method: 'POST', type: 'admin', token: 'admin-token', body: new URLSearchParams({ action: 'update_course', id, title: '변경' }).toString() });
+  const upd = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: new URLSearchParams({ action: 'update_course', id, title: '변경' }).toString() });
   assert.strictEqual(upd.statusCode, 200);
   assert.strictEqual(db.courses.find(c => c.id === id).title, '변경');
 
-  const updUser = await call(handler, { method: 'POST', type: 'admin', token: 'user-token', body: new URLSearchParams({ action: 'update_course', id, title: 'X' }).toString() });
+  const updUser = await call(handler, { method: 'POST', type: 'admin', token: USER_TOKEN, body: new URLSearchParams({ action: 'update_course', id, title: 'X' }).toString() });
   assert.strictEqual(updUser.statusCode, 403);
 
-  const delUser = await call(handler, { method: 'POST', type: 'admin', token: 'user-token', body: new URLSearchParams({ action: 'delete_course', id }).toString() });
+  const delUser = await call(handler, { method: 'POST', type: 'admin', token: USER_TOKEN, body: new URLSearchParams({ action: 'delete_course', id }).toString() });
   assert.strictEqual(delUser.statusCode, 403);
 
-  const addUser = await call(handler, { method: 'POST', type: 'admin', token: 'user-token', body: new URLSearchParams({ action: 'add_course', title: 'X' }).toString() });
+  const addUser = await call(handler, { method: 'POST', type: 'admin', token: USER_TOKEN, body: new URLSearchParams({ action: 'add_course', title: 'X' }).toString() });
   assert.strictEqual(addUser.statusCode, 403);
   assert.ok(!db.courses.find(c => c.title === 'X'));
 
-  const del = await call(handler, { method: 'POST', type: 'admin', token: 'admin-token', body: new URLSearchParams({ action: 'delete_course', id }).toString() });
+  const del = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: new URLSearchParams({ action: 'delete_course', id }).toString() });
   assert.strictEqual(del.statusCode, 200);
   assert.ok(!db.courses.find(c => c.id === id));
 });
 
 test('retry_sync (old sheet re-send) is no longer accepted', async () => {
   const handler = loadHandler();
-  const res = await call(handler, { method: 'POST', type: 'admin', token: 'admin-token', body: new URLSearchParams({ action: 'retry_sync', id: 'a-full' }).toString() });
+  const res = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: new URLSearchParams({ action: 'retry_sync', id: 'a-full' }).toString() });
   assert.strictEqual(res.statusCode, 400);
   assert.deepStrictEqual(outboundCalls, []);
 });
@@ -401,6 +424,6 @@ test('OPTIONS preflight returns CORS headers', async () => {
 test('admin GET formats applicant timestamps in Korea time', async () => {
   db.education_apply[0].created_at = '2026-10-01T08:22:05Z';
   const handler = loadHandler();
-  const res = await call(handler, { type: 'admin', token: 'admin-token' });
+  const res = await call(handler, { type: 'admin', token: ADMIN_TOKEN });
   assert.strictEqual(res.json[FULL_ID].applicants[0].timestamp, '2026. 10. 01 17:22:05');
 });
