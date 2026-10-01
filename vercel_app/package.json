@@ -1,12 +1,15 @@
 {
-  "name": "dcci-edu-vercel",
+  "name": "dcci-edu-netlify",
   "version": "1.0.0",
-  "description": "DCCI Education Platform Vercel Deployment",
+  "description": "DCCI Education Platform Netlify Migration V7",
   "scripts": {
-    "start": "vercel dev"
+    "start": "netlify dev"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0"
+  },
+  "devDependencies": {
+    "netlify-cli": "^17.0.0"
   },
   "engines": {
     "node": ">=18.0.0"
