@@ -42,12 +42,15 @@
 
     <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between">
-            <div class="flex items-center cursor-pointer" onclick="showPage('main')">
-                <img src="dcci_new_logo.png" alt="대구상공회의소 로고" class="h-8 sm:h-10 mr-2 sm:mr-3 flex-shrink-0">
-                <span class="text-xl sm:text-[22px] font-black text-[#0f3d7a] tracking-tighter whitespace-nowrap ml-1 sm:ml-2">교육센터</span>
-            </div>
-            <div class="text-xs sm:text-sm text-gray-500 font-medium text-right break-keep">
-                <span class="hidden sm:inline">문의: 대구상공회의소 </span>교육담당자<br class="sm:hidden"> (053-222-3109)
+            <div class="flex items-center justify-between cursor-pointer">
+                <div class="flex items-center" onclick="showPage('main')">
+                    <img src="dcci_new_logo.png" alt="대구상공회의소 로고" class="h-8 sm:h-10 mr-2 sm:mr-3 flex-shrink-0">
+                    <span class="text-xl sm:text-[22px] font-black text-[#0f3d7a] tracking-tighter whitespace-nowrap ml-1 sm:ml-2">교육센터</span>
+                </div>
+                <button onclick="openLookupModal()" class="ml-4 flex items-center bg-white text-blue-800 border border-blue-200 hover:bg-blue-50 px-3 py-1.5 rounded-lg font-bold shadow-sm transition-all text-xs sm:text-sm">
+                    <svg class="w-4 h-4 mr-1 sm:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    내 신청 조회
+                </button>
             </div>
         </div>
     </header>
@@ -446,6 +449,13 @@
                                     <p class="text-gray-500 text-xs mt-1">수집된 정보는 교육 운영 및 수료증 발급 목적으로만 사용됩니다.</p>
                                 </div>
                             </div>
+                            
+                            <div class="grid grid-cols-2 gap-4 mt-2 pt-2 border-t border-gray-200">
+                                <div><label class="block text-sm font-bold text-gray-700">조회용 비밀번호</label>
+                                <input type="password" id="password" required class="mt-1 w-full border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 text-sm" placeholder="신청 내역 조회용"></div>
+                                <div><label class="block text-sm font-bold text-gray-700">비밀번호 확인</label>
+                                <input type="password" id="passwordConfirm" required class="mt-1 w-full border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500 text-sm" placeholder="비밀번호 재입력"></div>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -454,6 +464,50 @@
                         class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-900 text-base font-bold text-white hover:bg-blue-800 sm:ml-3 sm:w-auto sm:text-sm shadow-md transition-all transform hover:-translate-y-0.5">신청하기</button>
                     <button type="button" onclick="closeModal()"
                         class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">취소</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 신청조회 모달 -->
+    <div id="lookupModal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onclick="closeLookupModal()"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md w-full">
+                <div class="bg-blue-900 px-4 py-3 sm:px-6 flex justify-between items-center">
+                    <h3 class="text-lg leading-6 font-bold text-white">신청 내역 조회</h3>
+                    <button type="button" class="text-white hover:text-gray-200 font-bold" onclick="closeLookupModal()">✕</button>
+                </div>
+                <div class="px-4 py-5 sm:p-6" id="lookupFormContainer">
+                    <form id="lookupForm" onsubmit="event.preventDefault(); submitLookup();">
+                        <div class="space-y-4">
+                            <div>
+                                <label for="lookupId" class="block text-sm font-bold text-gray-700">신청번호</label>
+                                <input type="text" id="lookupId" required placeholder="예: A8F2-B9K1" class="mt-1 w-full border border-gray-300 rounded-md py-2 px-3 uppercase text-sm">
+                            </div>
+                            <div>
+                                <label for="lookupPwd" class="block text-sm font-bold text-gray-700">비밀번호</label>
+                                <input type="password" id="lookupPwd" required placeholder="신청 시 입력한 비밀번호" class="mt-1 w-full border border-gray-300 rounded-md py-2 px-3 text-sm">
+                            </div>
+                        </div>
+                        <div class="mt-6">
+                            <button type="submit" id="btn-lookup-submit" class="w-full px-4 py-2 bg-blue-900 text-white font-bold rounded-md hover:bg-blue-800 transition-colors shadow">조회하기</button>
+                        </div>
+                    </form>
+                </div>
+                <!-- 결과 -->
+                <div class="px-4 py-5 sm:p-6 hidden" id="lookupResultContainer">
+                    <div class="bg-green-50 border border-green-200 rounded p-4 mb-4">
+                        <p class="text-sm font-bold text-green-800" id="resStatus">신청 접수 완료</p>
+                    </div>
+                    <dl class="space-y-2 text-sm text-gray-700">
+                        <div class="flex justify-between border-b pb-1"><dt class="font-bold">신청자</dt><dd id="resName"></dd></div>
+                        <div class="flex justify-between border-b pb-1"><dt class="font-bold">과정명</dt><dd id="resTitle" class="text-right"></dd></div>
+                        <div class="flex justify-between border-b pb-1"><dt class="font-bold">일시</dt><dd id="resDate" class="text-right"></dd></div>
+                        <div class="flex justify-between pb-1"><dt class="font-bold">장소</dt><dd id="resPlace" class="text-right"></dd></div>
+                    </dl>
+                    <button onclick="resetLookup()" class="w-full mt-4 px-4 py-2 bg-gray-200 text-gray-800 font-bold rounded-md hover:bg-gray-300 transition-colors">다른 내역 조회</button>
                 </div>
             </div>
         </div>
@@ -845,7 +899,6 @@
             try {
                 const params = new URLSearchParams({
                     course: document.getElementById('modalCourseTitle').value,
-                    course_id: activeCourseId,
                     bizName: document.getElementById('bizName').value,
                     bizNo: document.getElementById('bizNo').value,
                     dept: document.getElementById('deptName').value,
@@ -860,7 +913,8 @@
                 const result = await response.json();
 
                 if (result.result === 'success') {
-                    alert(`[신청 완료]\n정상적으로 접수되었습니다.\n담당자가 확인 후 안내해 드리겠습니다.`);
+                    const lookupId = result.lookup_id || '알수없음';
+                    alert(`✅ 교육 신청이 완료되었습니다!\n\n[조회용 신청번호: ${lookupId}]\n※ 신청내역 조회 시 필요하므로 반드시 복사/메모해 주세요.\n\n담당자가 확인 후 안내해 드리겠습니다.`);
                     closeModal();
 
                     // Navigate to the category page containing the course
@@ -880,6 +934,67 @@
             } finally {
                 btn.innerText = originalText;
                 btn.disabled = false;
+            }
+        }
+
+        // --- 신청 조회 모달 로직 ---
+        function openLookupModal() {
+            document.getElementById('lookupModal').classList.remove('hidden');
+            resetLookup();
+        }
+
+        function closeLookupModal() {
+            document.getElementById('lookupModal').classList.add('hidden');
+        }
+
+        function resetLookup() {
+            document.getElementById('lookupForm').reset();
+            document.getElementById('lookupFormContainer').classList.remove('hidden');
+            document.getElementById('lookupResultContainer').classList.add('hidden');
+        }
+
+        async function submitLookup() {
+            const btn = document.getElementById('btn-lookup-submit');
+            btn.disabled = true;
+            btn.innerText = '조회 중...';
+
+            try {
+                const params = new URLSearchParams({
+                    action: 'lookup_apply',
+                    lookup_id: document.getElementById('lookupId').value,
+                    lookup_password: document.getElementById('lookupPwd').value
+                });
+
+                const res = await fetch(scriptURL + '?type=public', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: params
+                });
+                
+                const result = await res.json();
+                
+                if (!res.ok || result.result !== 'success') {
+                    alert(result.msg || '정보가 일치하지 않거나 찾을 수 없습니다.');
+                    btn.disabled = false;
+                    btn.innerText = '조회하기';
+                    return;
+                }
+
+                // 결과 표시
+                const data = result.data;
+                document.getElementById('resName').innerText = data.nameMasked;
+                document.getElementById('resTitle').innerText = data.title;
+                document.getElementById('resDate').innerText = data.date;
+                document.getElementById('resPlace').innerText = data.place;
+
+                document.getElementById('lookupFormContainer').classList.add('hidden');
+                document.getElementById('lookupResultContainer').classList.remove('hidden');
+
+            } catch (err) {
+                alert('서버 오류: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = '조회하기';
             }
         }
 

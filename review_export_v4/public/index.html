@@ -823,8 +823,11 @@
         /**
          * [신청] 모달 및 폼 제출
          */
+        let currentReqId = '';
+
         function openModalFromDetail() {
             document.getElementById('modalCourseTitle').value = document.getElementById('detail-title').innerText;
+            currentReqId = 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
             document.getElementById('applicationModal').classList.remove('hidden');
         }
 
@@ -844,6 +847,7 @@
 
             try {
                 const params = new URLSearchParams({
+                    req_id: currentReqId,
                     course: document.getElementById('modalCourseTitle').value,
                     course_id: activeCourseId,
                     bizName: document.getElementById('bizName').value,

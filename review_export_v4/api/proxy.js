@@ -2,12 +2,15 @@ const { createClient } = require('@supabase/supabase-js');
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
+// For secure operations bypassing RLS (like updating sync_status), use service role key
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseKey; 
 
-// Initialize Supabase client safely
 let supabase = null;
+let supabaseAdmin = null;
 if (supabaseUrl && supabaseKey) {
   try {
     supabase = createClient(supabaseUrl, supabaseKey);
+    supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey);
   } catch (e) {
     console.error("Failed to initialize Supabase client:", e);
   }
@@ -30,25 +33,25 @@ function formatTimestamp(isoString) {
 }
 
 module.exports = async function handler(req, res) {
-  // CORS headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization');
 
-  // OPTIONS: Always Allow (CORS)
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
   if (!supabase) {
-    return res.status(500).json({ result: 'error', msg: 'Server Configuration Error: Supabase client is not initialized. Please ensure SUPABASE_URL and SUPABASE_KEY environment variables are configured in the Vercel dashboard.' });
+    return res.status(500).json({ result: 'error', msg: 'Server Configuration Error' });
   }
 
   const isPublic = req.query.type === 'public';
   let dbClient = supabase;
+  let isAdmin = false;
 
+  // Authentication & RBAC (Role-Based Access Control)
   if (!isPublic) {
     const authHeader = req.headers['authorization'];
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -62,33 +65,89 @@ module.exports = async function handler(req, res) {
       return res.status(401).json({ result: 'error', msg: 'Unauthorized: Invalid or expired session' });
     }
 
+    // Unify Admin check: matches the logic of RLS
+    // Server checks if role === 'admin'
+    const hasAdminRole = user.app_metadata && user.app_metadata.role === 'admin';
+    
+    if (!hasAdminRole) {
+      return res.status(403).json({ result: 'error', msg: 'Forbidden: You do not have administrator privileges.' });
+    }
+    isAdmin = true;
+
     try {
       dbClient = createClient(supabaseUrl, supabaseKey, {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
+        global: { headers: { Authorization: `Bearer ${token}` } }
       });
     } catch (clientErr) {
-      console.error("Failed to create request-scoped client:", clientErr);
       return res.status(500).json({ result: 'error', msg: 'Failed to authenticate database client.' });
     }
   }
 
-  // GET Request: Fetch courses and applicants count/list
+  // Helper function to sync with Google Sheets
+  async function syncToGoogleSheets(applyId, courseData, payload) {
+    const googleScriptUrl = process.env.GOOGLE_SCRIPT_URL;
+    if (!googleScriptUrl) return { success: false, error: 'GOOGLE_SCRIPT_URL not configured' };
+
+    try {
+      const formBody = new URLSearchParams({
+        secret: process.env.APPS_SCRIPT_SECRET || '', // For auth
+        apply_id: applyId,
+        course: payload.course || courseData.title,
+        bizName: payload.bizName,
+        bizNo: payload.bizNo,
+        dept: payload.dept,
+        position: payload.position,
+        name: payload.name,
+        phone: payload.phone,
+        email: payload.email,
+        privacy: payload.privacy
+      });
+
+      const sheetRes = await fetch(googleScriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formBody
+      });
+
+      if (!sheetRes.ok) throw new Error(`HTTP Error: ${sheetRes.status}`);
+      
+      const sheetResultText = await sheetRes.text();
+      let sheetResult;
+      try {
+        sheetResult = JSON.parse(sheetResultText);
+      } catch (e) {
+        throw new Error(`Invalid JSON from Apps Script: ${sheetResultText.substring(0, 50)}`);
+      }
+      
+      if (sheetResult.result !== 'success') throw new Error(`Logic Error: ${sheetResult.message}`);
+
+      // Must use supabaseAdmin to bypass RLS to update sync_status if triggered by public user
+      await supabaseAdmin.from('education_apply').update({ sync_status: 'success', sync_error: null }).eq('id', applyId);
+      return { success: true };
+    } catch (syncErr) {
+      console.error('Failed to sync to Google Sheets:', syncErr);
+      
+      const { data: applyRow } = await supabaseAdmin.from('education_apply').select('sync_retries').eq('id', applyId).single();
+      const retries = applyRow ? (applyRow.sync_retries || 0) + 1 : 1;
+      
+      await supabaseAdmin.from('education_apply').update({ 
+        sync_status: 'failed', 
+        sync_error: syncErr.message,
+        sync_retries: retries 
+      }).eq('id', applyId);
+
+      return { success: false, error: syncErr.message };
+    }
+  }
+
+  // GET Request: Fetch courses
   if (req.method === 'GET') {
     try {
       if (isPublic) {
         res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=3600");
-        // Query the public view which has the pre-calculated applicant counts
-        const { data: courses, error } = await dbClient
-          .from('public_courses')
-          .select('*');
-
+        const { data: courses, error } = await dbClient.from('public_courses').select('*');
         if (error) throw error;
-
-        // Map to response format
+        
         const responseData = {};
         courses.forEach(course => {
             let cost = "무료 / 별도 문의";
@@ -98,7 +157,6 @@ module.exports = async function handler(req, res) {
               cost = parts[0];
               paymentInfo = parts[1];
             } else {
-              // Backward compatibility: use the whole string for both if no delimiter (since we just deployed that)
               cost = paymentInfo;
             }
 
@@ -124,16 +182,15 @@ module.exports = async function handler(req, res) {
         });
         return res.status(200).json(responseData);
       } else {
-        // Admin Request: Fetch courses and full applicant list
-        const { data: courses, error } = await dbClient
-          .from('courses')
-          .select('*, education_apply(*)');
-
+        if (!isAdmin) return res.status(403).json({ result: 'error', msg: 'Forbidden' });
+        
+        const { data: courses, error } = await dbClient.from('courses').select('*, education_apply(*)');
         if (error) throw error;
-
+        
         const responseData = {};
         courses.forEach(course => {
           const apps = (course.education_apply || []).map(app => ({
+            id: app.id,
             timestamp: formatTimestamp(app.created_at),
             bizName: app.company || "",
             bizNo: app.biz_no || "",
@@ -145,7 +202,9 @@ module.exports = async function handler(req, res) {
             privacy: app.agree_privacy ? "동의함" : "미동의",
             memberType: "",
             feeStatus: "",
-            councilType: ""
+            councilType: "",
+            syncStatus: app.sync_status || "pending",
+            syncError: app.sync_error || ""
           }));
 
           let cost = "무료 / 별도 문의";
@@ -187,17 +246,17 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  // POST Request: Add/Update/Delete courses or Submit application
+  // POST Request
   if (req.method === 'POST') {
     try {
       const { action } = req.body;
 
-      // Block admin actions for public requests
-      if (isPublic && ['add_course', 'update_course', 'delete_course'].includes(action)) {
+      // Block admin actions for public requests completely
+      if (isPublic && ['add_course', 'update_course', 'delete_course', 'retry_sync'].includes(action)) {
         return res.status(401).json({ result: 'error', msg: 'Unauthorized: Admin actions require authentication.' });
       }
 
-      // 1. Add course
+      // Restored complete logic for add/update/delete
       if (action === 'add_course') {
         const { data, error } = await dbClient
           .from('courses')
@@ -222,8 +281,6 @@ module.exports = async function handler(req, res) {
         if (error) throw error;
         return res.status(200).json({ result: 'success', id: data[0].id });
       }
-
-      // 2. Update course
       else if (action === 'update_course') {
         const { error } = await dbClient
           .from('courses')
@@ -248,8 +305,6 @@ module.exports = async function handler(req, res) {
         if (error) throw error;
         return res.status(200).json({ result: 'success' });
       }
-
-      // 3. Delete course
       else if (action === 'delete_course') {
         const { error } = await dbClient
           .from('courses')
@@ -259,109 +314,80 @@ module.exports = async function handler(req, res) {
         if (error) throw error;
         return res.status(200).json({ result: 'success' });
       }
+      
+      // Retry Sync Action
+      else if (action === 'retry_sync') {
+        const { apply_id } = req.body;
+        if (!isAdmin) return res.status(403).json({ result: 'error', msg: 'Forbidden' });
+        
+        const { data: applyData, error: applyError } = await dbClient.from('education_apply').select('*, courses(title)').eq('id', apply_id).single();
+        if (applyError || !applyData) return res.status(404).json({ result: 'error', msg: 'Application not found' });
 
-      // 4. Submit applicant registration (No action/default action)
+        const syncResult = await syncToGoogleSheets(apply_id, applyData.courses, {
+          course: applyData.courses.title,
+          bizName: applyData.company,
+          bizNo: applyData.biz_no,
+          dept: applyData.dept,
+          position: applyData.position,
+          name: applyData.name,
+          phone: applyData.phone,
+          email: applyData.email,
+          privacy: applyData.agree_privacy ? "동의함" : "미동의"
+        });
+
+        if (syncResult && !syncResult.success) {
+          return res.status(500).json({ result: 'error', msg: '재전송 실패: ' + syncResult.error });
+        }
+        return res.status(200).json({ result: 'success' });
+      }
+
+      // Application Submit (Default Action)
       else {
         const courseId = req.body.course_id;
-        if (!courseId) {
-          return res.status(400).json({ result: 'error', msg: 'Missing course ID.' });
-        }
+        const reqId = req.body.req_id; // Added for true idempotency
         
-        // Fetch course and its current applicants to validate capacity and deadline
-        const { data: courseData, error: courseError } = await dbClient
-          .from('courses')
-          .select('*, education_apply(id)')
-          .eq('id', courseId)
-          .single();
-
-        if (courseError || !courseData) {
-          return res.status(404).json({ result: 'error', msg: '해당 과정을 찾을 수 없습니다.' });
-        }
-
-        // Validate deadline
-        if (courseData.deadline) {
-          const deadlineDate = new Date(courseData.deadline);
-          // Set to end of the day for the deadline
-          deadlineDate.setHours(23, 59, 59, 999);
-          if (new Date() > deadlineDate) {
-            return res.status(400).json({ result: 'error', msg: '신청 기한이 마감되었습니다.' });
-          }
-        }
-
-        // Validate capacity (Best effort in JS - Recommend moving to RPC for atomic check)
-        const currentApplicants = courseData.education_apply ? courseData.education_apply.length : 0;
-        if (courseData.capacity > 0 && currentApplicants >= courseData.capacity) {
-          return res.status(400).json({ result: 'error', msg: '정원이 초과되었습니다.' });
-        }
-
+        if (!courseId) return res.status(400).json({ result: 'error', msg: 'Missing course ID.' });
+        if (!reqId) return res.status(400).json({ result: 'error', msg: 'Missing request ID.' });
+        
         const agreePrivacy = req.body.privacy === '동의함' || req.body.privacy === 'true' || req.body.privacy === true;
-        if (!agreePrivacy) {
-          return res.status(400).json({ result: 'error', msg: '개인정보 수집 및 이용에 동의해야 합니다.' });
-        }
 
-        // Insert registration record to Supabase
-        const { data: applyData, error: applyError } = await dbClient
-          .from('education_apply')
-          .insert([{
-            course_id: courseId,
-            company: req.body.bizName,
-            biz_no: req.body.bizNo,
-            dept: req.body.dept,
-            position: req.body.position,
-            name: req.body.name,
-            phone: req.body.phone,
-            email: req.body.email,
-            agree_privacy: agreePrivacy,
-            sync_status: 'pending' // Added for Google Sheets sync tracking
-          }])
-          .select('id');
+        // Call the PostgreSQL RPC for Atomic Processing
+        let applyId;
+        const { data, error } = await dbClient.rpc('atomic_course_apply', {
+          p_course_id: courseId,
+          p_req_id: reqId,
+          p_company: req.body.bizName,
+          p_biz_no: req.body.bizNo,
+          p_dept: req.body.dept,
+          p_position: req.body.position,
+          p_name: req.body.name,
+          p_phone: req.body.phone,
+          p_email: req.body.email,
+          p_agree_privacy: agreePrivacy
+        });
 
-        if (applyError) throw applyError;
-        const applyId = applyData[0].id;
-
-        // Sync registration to Google Sheets (if configured)
-        const googleScriptUrl = process.env.GOOGLE_SCRIPT_URL;
-        if (googleScriptUrl) {
-          try {
-            const formBody = new URLSearchParams({
-              apply_id: applyId,
-              course: req.body.course || courseData.title,
-              bizName: req.body.bizName,
-              bizNo: req.body.bizNo,
-              dept: req.body.dept,
-              position: req.body.position,
-              name: req.body.name,
-              phone: req.body.phone,
-              email: req.body.email,
-              privacy: req.body.privacy
-            });
-
-            const sheetRes = await fetch(googleScriptUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-              },
-              body: formBody
-            });
-
-            if (!sheetRes.ok) throw new Error(`Google Sheets HTTP Error: ${sheetRes.status}`);
-            
-            // NOTE: Assuming Apps Script returns { result: 'success' }. 
-            // If it returns HTML or doesn't support JSON, we skip JSON parsing to prevent crashes.
-            // For rigorous check, Apps Script should return JSON.
-            
-            // Update sync_status to success
-            await dbClient.from('education_apply').update({ sync_status: 'success' }).eq('id', applyId);
-
-          } catch (syncErr) {
-            console.error('Failed to sync to Google Sheets:', syncErr);
-            // Mark as failed in DB
-            await dbClient.from('education_apply').update({ sync_status: 'failed' }).eq('id', applyId);
-            // Non-blocking: we do not fail the request if Google Sheets sync fails
+        if (error) {
+          // Idempotency: Catch unique constraint violations for req_id
+          if (error.code === '23505' || error.message.includes('unique_req_id')) {
+             const { data: existing } = await supabaseAdmin.from('education_apply').select('id').eq('req_id', reqId).single();
+             if (existing) {
+               applyId = existing.id; // Proceed to retry sync
+             } else {
+               return res.status(409).json({ result: 'error', msg: '이미 진행중인 신청입니다.' });
+             }
+          } else {
+            return res.status(400).json({ result: 'error', msg: error.message });
           }
+        } else {
+          applyId = data; // the returned UUID from RPC
         }
 
-        return res.status(200).json({ result: 'success' });
+        // Trigger Sync to Sheets
+        const syncResult = await syncToGoogleSheets(applyId, { title: req.body.course }, req.body);
+        
+        // Always return success to user even if sync fails (because DB was successfully saved)
+        // Admin will check sync_status
+        return res.status(200).json({ result: 'success', apply_id: applyId, sync_success: syncResult.success });
       }
     } catch (err) {
       console.error('Database POST Error:', err);

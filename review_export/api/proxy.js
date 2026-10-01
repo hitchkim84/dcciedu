@@ -192,11 +192,6 @@ module.exports = async function handler(req, res) {
     try {
       const { action } = req.body;
 
-      // Block admin actions for public requests
-      if (isPublic && ['add_course', 'update_course', 'delete_course'].includes(action)) {
-        return res.status(401).json({ result: 'error', msg: 'Unauthorized: Admin actions require authentication.' });
-      }
-
       // 1. Add course
       if (action === 'add_course') {
         const { data, error } = await dbClient
@@ -262,45 +257,27 @@ module.exports = async function handler(req, res) {
 
       // 4. Submit applicant registration (No action/default action)
       else {
-        const courseId = req.body.course_id;
-        if (!courseId) {
-          return res.status(400).json({ result: 'error', msg: 'Missing course ID.' });
+        const courseTitle = req.body.course;
+        if (!courseTitle) {
+          return res.status(400).json({ result: 'error', msg: 'Missing course title.' });
         }
-        
-        // Fetch course and its current applicants to validate capacity and deadline
+
+        // Find course ID by title
         const { data: courseData, error: courseError } = await dbClient
           .from('courses')
-          .select('*, education_apply(id)')
-          .eq('id', courseId)
-          .single();
+          .select('id')
+          .eq('title', courseTitle.trim())
+          .limit(1);
 
-        if (courseError || !courseData) {
+        if (courseError) throw courseError;
+        if (!courseData || courseData.length === 0) {
           return res.status(404).json({ result: 'error', msg: '해당 과정을 찾을 수 없습니다.' });
         }
 
-        // Validate deadline
-        if (courseData.deadline) {
-          const deadlineDate = new Date(courseData.deadline);
-          // Set to end of the day for the deadline
-          deadlineDate.setHours(23, 59, 59, 999);
-          if (new Date() > deadlineDate) {
-            return res.status(400).json({ result: 'error', msg: '신청 기한이 마감되었습니다.' });
-          }
-        }
-
-        // Validate capacity (Best effort in JS - Recommend moving to RPC for atomic check)
-        const currentApplicants = courseData.education_apply ? courseData.education_apply.length : 0;
-        if (courseData.capacity > 0 && currentApplicants >= courseData.capacity) {
-          return res.status(400).json({ result: 'error', msg: '정원이 초과되었습니다.' });
-        }
-
-        const agreePrivacy = req.body.privacy === '동의함' || req.body.privacy === 'true' || req.body.privacy === true;
-        if (!agreePrivacy) {
-          return res.status(400).json({ result: 'error', msg: '개인정보 수집 및 이용에 동의해야 합니다.' });
-        }
+        const courseId = courseData[0].id;
 
         // Insert registration record to Supabase
-        const { data: applyData, error: applyError } = await dbClient
+        const { error: applyError } = await dbClient
           .from('education_apply')
           .insert([{
             course_id: courseId,
@@ -311,21 +288,17 @@ module.exports = async function handler(req, res) {
             name: req.body.name,
             phone: req.body.phone,
             email: req.body.email,
-            agree_privacy: agreePrivacy,
-            sync_status: 'pending' // Added for Google Sheets sync tracking
-          }])
-          .select('id');
+            agree_privacy: req.body.privacy === '동의함' || req.body.privacy === 'true' || req.body.privacy === true
+          }]);
 
         if (applyError) throw applyError;
-        const applyId = applyData[0].id;
 
         // Sync registration to Google Sheets (if configured)
         const googleScriptUrl = process.env.GOOGLE_SCRIPT_URL;
         if (googleScriptUrl) {
           try {
             const formBody = new URLSearchParams({
-              apply_id: applyId,
-              course: req.body.course || courseData.title,
+              course: req.body.course,
               bizName: req.body.bizName,
               bizNo: req.body.bizNo,
               dept: req.body.dept,
@@ -336,27 +309,15 @@ module.exports = async function handler(req, res) {
               privacy: req.body.privacy
             });
 
-            const sheetRes = await fetch(googleScriptUrl, {
+            await fetch(googleScriptUrl, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/x-www-form-urlencoded'
               },
               body: formBody
             });
-
-            if (!sheetRes.ok) throw new Error(`Google Sheets HTTP Error: ${sheetRes.status}`);
-            
-            // NOTE: Assuming Apps Script returns { result: 'success' }. 
-            // If it returns HTML or doesn't support JSON, we skip JSON parsing to prevent crashes.
-            // For rigorous check, Apps Script should return JSON.
-            
-            // Update sync_status to success
-            await dbClient.from('education_apply').update({ sync_status: 'success' }).eq('id', applyId);
-
           } catch (syncErr) {
             console.error('Failed to sync to Google Sheets:', syncErr);
-            // Mark as failed in DB
-            await dbClient.from('education_apply').update({ sync_status: 'failed' }).eq('id', applyId);
             // Non-blocking: we do not fail the request if Google Sheets sync fails
           }
         }
