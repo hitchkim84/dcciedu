@@ -46,8 +46,12 @@
                 <img src="dcci_new_logo.png" alt="대구상공회의소 로고" class="h-8 sm:h-10 mr-2 sm:mr-3 flex-shrink-0">
                 <span class="text-xl sm:text-[22px] font-black text-[#0f3d7a] tracking-tighter whitespace-nowrap ml-1 sm:ml-2">교육센터</span>
             </div>
-            <div class="text-xs sm:text-sm text-gray-500 font-medium text-right break-keep">
-                <span class="hidden sm:inline">문의: 대구상공회의소 </span>교육담당자<br class="sm:hidden"> (053-222-3109)
+            <div class="flex items-center gap-3 sm:gap-5">
+                <button type="button" onclick="openLookupModal()"
+                    class="px-3 py-2 sm:px-4 text-xs sm:text-sm font-bold text-blue-900 border border-blue-900 rounded-lg hover:bg-blue-50 whitespace-nowrap">신청 확인</button>
+                <div class="text-xs sm:text-sm text-gray-500 font-medium text-right break-keep">
+                    <span class="hidden sm:inline">문의: 대구상공회의소 </span>교육담당자<br class="sm:hidden"> (053-222-3109)
+                </div>
             </div>
         </div>
     </header>
@@ -361,6 +365,7 @@
             <a href="privacy.html" target="_blank" class="hover:text-white transition-colors">개인정보처리방침</a>
             <a href="email_policy.html" target="_blank" class="hover:text-white transition-colors">이메일무단수집거부</a>
             <a href="javascript:void(0)" onclick="showPage('directions')" class="hover:text-white transition-colors">찾아오시는길</a>
+            <a href="javascript:void(0)" onclick="openLookupModal()" class="hover:text-white transition-colors">신청 확인</a>
         </div>
     </div>
 
@@ -379,6 +384,34 @@
             </div>
         </div>
     </footer>
+
+    <!-- 신청 확인 모달: 이름 + 휴대폰 + 이메일이 모두 일치하는 신청의 과정명·일시만 보여준다 -->
+    <div id="lookupModal" class="fixed inset-0 z-50 hidden overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="lookup-title">
+        <div class="flex items-center justify-center min-h-screen px-4 py-8">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75" aria-hidden="true" onclick="closeLookupModal()"></div>
+            <div class="relative bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden">
+                <div class="bg-blue-900 px-4 py-3 sm:px-6 flex justify-between items-center">
+                    <h3 id="lookup-title" class="text-lg font-bold text-white">교육 신청 확인</h3>
+                    <button type="button" class="text-white hover:text-gray-200" onclick="closeLookupModal()">✕</button>
+                </div>
+                <form id="lookupForm" class="px-4 pt-5 pb-4 sm:p-6 space-y-4" onsubmit="event.preventDefault(); submitLookup();">
+                    <p class="text-sm text-gray-600 break-keep">신청할 때 입력한 성명, 휴대폰, 이메일을 그대로 입력해주세요. 세 가지가 모두 일치해야 확인됩니다.</p>
+                    <div><label for="lookupName" class="block text-sm font-bold text-gray-700">성명</label>
+                        <input type="text" id="lookupName" required maxlength="50" autocomplete="name"
+                            class="mt-1 w-full border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500" placeholder="예: 홍길동"></div>
+                    <div><label for="lookupPhone" class="block text-sm font-bold text-gray-700">휴대폰</label>
+                        <input type="tel" id="lookupPhone" required maxlength="13" oninput="autoHyphen(this, 'phone')" autocomplete="tel"
+                            class="mt-1 w-full border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500" placeholder="010-1234-5678"></div>
+                    <div><label for="lookupEmail" class="block text-sm font-bold text-gray-700">이메일</label>
+                        <input type="email" id="lookupEmail" required maxlength="100" autocomplete="email"
+                            class="mt-1 w-full border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500" placeholder="예: user@example.com"></div>
+                    <button type="submit" id="lookupSubmit"
+                        class="w-full py-3 bg-blue-900 text-white font-bold rounded-lg hover:bg-blue-800">확인하기</button>
+                    <div id="lookupResult" class="hidden"></div>
+                </form>
+            </div>
+        </div>
+    </div>
 
     <div id="applicationModal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title"
         role="dialog" aria-modal="true">
@@ -835,6 +868,54 @@
         function openModalFromDetail() {
             document.getElementById('modalCourseTitle').value = document.getElementById('detail-title').innerText;
             document.getElementById('applicationModal').classList.remove('hidden');
+        }
+
+        function openLookupModal() {
+            document.getElementById('lookupForm').reset();
+            document.getElementById('lookupResult').classList.add('hidden');
+            document.getElementById('lookupResult').innerHTML = '';
+            document.getElementById('lookupModal').classList.remove('hidden');
+            document.getElementById('lookupName').focus();
+        }
+
+        function closeLookupModal() {
+            document.getElementById('lookupModal').classList.add('hidden');
+            document.getElementById('lookupForm').reset();
+            document.getElementById('lookupResult').innerHTML = '';
+        }
+
+        async function submitLookup() {
+            const form = document.getElementById('lookupForm');
+            if (!form.checkValidity()) return form.reportValidity();
+            const btn = document.getElementById('lookupSubmit');
+            const box = document.getElementById('lookupResult');
+            btn.disabled = true;
+            btn.innerText = '확인 중...';
+            try {
+                const params = new URLSearchParams({
+                    action: 'lookup',
+                    name: document.getElementById('lookupName').value,
+                    phone: document.getElementById('lookupPhone').value,
+                    email: document.getElementById('lookupEmail').value
+                });
+                const response = await fetch(scriptURL + '?type=public', { method: 'POST', body: params });
+                const result = await response.json();
+                if (result.result !== 'success') throw new Error(result.msg || '확인 중 오류가 발생했습니다.');
+                if (!result.items.length) {
+                    box.innerHTML = '<div class="p-4 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 break-keep">일치하는 신청이 없습니다. 입력한 정보를 다시 확인하시거나 교육담당자(053-222-3109)에게 문의해주세요.</div>';
+                } else {
+                    box.innerHTML = '<div class="p-4 bg-green-50 border border-green-200 rounded-lg"><p class="text-sm font-bold text-green-800 mb-2">접수 완료된 신청 ' + result.items.length + '건</p><ul class="space-y-2">' +
+                        result.items.map(it => '<li class="text-sm text-gray-800"><span class="font-bold">' + escapeHtml(it.courseTitle) + '</span><br><span class="text-gray-500">교육일시: ' + escapeHtml(it.courseDate || '추후 안내') + ' · 신청일시: ' + escapeHtml(it.appliedAt) + '</span></li>').join('') +
+                        '</ul></div>';
+                }
+                box.classList.remove('hidden');
+            } catch (e) {
+                box.innerHTML = '<div class="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">' + escapeHtml(e.message) + '</div>';
+                box.classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = '확인하기';
+            }
         }
 
         function closeModal() {

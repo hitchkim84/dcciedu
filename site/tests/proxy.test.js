@@ -23,6 +23,7 @@ function resetDb() {
     ]
   };
   outboundCalls = [];
+  lookupCount = {};
   viewExists = true;
 }
 
@@ -138,10 +139,29 @@ function atomicCourseApply(p) {
   return { data: id, error: null };
 }
 
+// sql/08_lookup_applications.sql 흉내: 3가지 일치 시 과정명·일시만 반환, 같은 번호 5회 넘으면 거절
+let lookupCount = {};
+function lookupMyApplications(p) {
+  const digits = String(p.p_phone).replace(/\D/g, '');
+  lookupCount[digits] = (lookupCount[digits] || 0) + 1;
+  if (lookupCount[digits] > 5) return raise('조회 요청이 많습니다. 잠시 후 다시 시도해주세요.');
+  const rows = db.education_apply
+    .filter(a => a.name === p.p_name && String(a.phone).replace(/\D/g, '') === digits && String(a.email).toLowerCase() === String(p.p_email).toLowerCase())
+    .map(a => {
+      const c = db.courses.find(c => c.id === a.course_id) || {};
+      return { course_title: c.title, course_date: c.date || '', applied_at: '2026-10-01 10:00' };
+    });
+  return { data: rows, error: null };
+}
+
 function createClient(url, key, opts = {}) {
   const client = { key, headers: (opts.global && opts.global.headers) || {} };
   client.from = table => makeQuery(client, table);
-  client.rpc = async (name, params) => (name === 'atomic_course_apply' ? atomicCourseApply(params) : raise('unknown rpc'));
+  client.rpc = async (name, params) => {
+    if (name === 'atomic_course_apply') return atomicCourseApply(params);
+    if (name === 'lookup_my_applications') return lookupMyApplications(params);
+    return raise('unknown rpc');
+  };
   client.auth = {
     async getUser(token) {
       const who = claimsOf(token).who;
@@ -347,6 +367,51 @@ test('lookup id and password hash are not stored', async () => {
   assert.strictEqual(res.statusCode, 200);
   assert.strictEqual(lastRpcParams.p_lookup_id, null);
   assert.strictEqual(lastRpcParams.p_lookup_password_hash, null);
+});
+
+// ---- Applicant self lookup ------------------------------------------------
+function lookupForm(overrides = {}) {
+  return new URLSearchParams({ action: 'lookup', name: '홍길동', phone: '010-1234-5678', email: 'HONG@example.com', ...overrides }).toString();
+}
+
+test('lookup returns only course title/date/applied time, never personal data', async () => {
+  const handler = loadHandler();
+  await call(handler, { method: 'POST', body: applyForm() });
+  const before = db.education_apply.length;
+  const res = await call(handler, { method: 'POST', body: lookupForm() });
+  assert.strictEqual(res.statusCode, 200, res.body);
+  assert.strictEqual(res.json.items.length, 1);
+  assert.deepStrictEqual(Object.keys(res.json.items[0]).sort(), ['appliedAt', 'courseDate', 'courseTitle']);
+  assert.strictEqual(res.json.items[0].courseTitle, '세무회계 실무');
+  assert.doesNotMatch(res.body, /010|hong@|대구상사|123-45/i);
+  assert.strictEqual(db.education_apply.length, before); // 조회는 신청을 만들지 않음
+});
+
+test('lookup with one wrong field returns the same empty answer', async () => {
+  const handler = loadHandler();
+  await call(handler, { method: 'POST', body: applyForm() });
+  for (const o of [{ name: '김철수' }, { phone: '010-9999-9999' }, { email: 'x@example.com' }]) {
+    const res = await call(handler, { method: 'POST', body: lookupForm(o) });
+    assert.strictEqual(res.statusCode, 200);
+    assert.deepStrictEqual(res.json.items, []);
+  }
+});
+
+test('lookup input is validated and repeated lookups are limited', async () => {
+  const handler = loadHandler();
+  assert.strictEqual((await call(handler, { method: 'POST', body: lookupForm({ email: '' }) })).statusCode, 400);
+  assert.strictEqual((await call(handler, { method: 'POST', body: lookupForm({ phone: '12' }) })).statusCode, 400);
+  assert.strictEqual((await call(handler, { method: 'POST', body: lookupForm({ email: 'bad' }) })).statusCode, 400);
+  let last;
+  for (let i = 0; i < 6; i++) last = await call(handler, { method: 'POST', body: lookupForm() });
+  assert.strictEqual(last.statusCode, 429);
+  assert.match(last.json.msg, /잠시 후/);
+});
+
+test('lookup is only on the public endpoint and does not touch admin data', async () => {
+  const handler = loadHandler();
+  const res = await call(handler, { method: 'POST', type: 'admin', token: USER_TOKEN, body: lookupForm() });
+  assert.strictEqual(res.statusCode, 403);
 });
 
 // ---- Admin ---------------------------------------------------------------
