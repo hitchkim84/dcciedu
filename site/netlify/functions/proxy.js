@@ -208,6 +208,37 @@ async function handleApply(reqBody) {
   return jsonRes(200, { result: 'success' });
 }
 
+// 신청자 본인 확인: 이름 + 휴대폰 + 이메일이 모두 일치하는 신청의 과정명·교육일시·신청일시만 돌려준다.
+// 반복 조회 제한과 일치 확인은 DB 함수(sql/08_lookup_applications.sql)에서 한다.
+async function handleLookup(reqBody) {
+  const name = str(reqBody.name);
+  const phone = str(reqBody.phone);
+  const email = str(reqBody.email);
+  const phoneDigits = phone.replace(/\D/g, '');
+
+  if (!name || !phone || !email) {
+    return jsonRes(400, { result: 'error', msg: '이름, 휴대폰, 이메일을 모두 입력해주세요.' });
+  }
+  if (name.length > MAX_LEN.name || phone.length > MAX_LEN.phone || email.length > MAX_LEN.email) {
+    return jsonRes(400, { result: 'error', msg: '입력값이 너무 깁니다.' });
+  }
+  if (phoneDigits.length < 9 || phoneDigits.length > 11) {
+    return jsonRes(400, { result: 'error', msg: '연락처를 정확히 입력해주세요.' });
+  }
+  if (!EMAIL_RE.test(email)) {
+    return jsonRes(400, { result: 'error', msg: '이메일 주소를 정확히 입력해주세요.' });
+  }
+
+  const { data, error } = await supabase.rpc('lookup_my_applications', { p_name: name, p_phone: phone, p_email: email });
+  if (error) {
+    console.error('lookup_my_applications failed:', error);
+    const status = error.code === 'P0001' ? 429 : 500;
+    return jsonRes(status, { result: 'error', msg: userMessage(error) });
+  }
+  const items = (data || []).map(r => ({ courseTitle: r.course_title || '', courseDate: r.course_date || '', appliedAt: r.applied_at || '' }));
+  return jsonRes(200, { result: 'success', items });
+}
+
 function courseFields(reqBody) {
   return {
     category: reqBody.category,
@@ -327,6 +358,10 @@ exports.handler = async function(event, context) {
     try {
       // The public page posts applications without an action field.
       const action = reqBody.action || (isPublic ? 'apply' : '');
+
+      if (action === 'lookup' && isPublic) {
+        return await handleLookup(reqBody);
+      }
 
       if (action === 'apply') {
         return await handleApply(reqBody);
