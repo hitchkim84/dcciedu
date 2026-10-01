@@ -45,7 +45,7 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
   }
 
   if (!supabase) {
-    return return jsonRes(500, { result: 'error', msg: 'Server Configuration Error: Supabase client is not initialized. Please ensure SUPABASE_URL and SUPABASE_KEY environment variables are configured in the Vercel dashboard.' });
+    return jsonRes(500, { result: 'error', msg: 'Error' });
   }
 
   const isPublic = event.queryStringParameters.type === 'public';
@@ -54,14 +54,14 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
   if (!isPublic) {
     const authHeader = event.headers['authorization'];
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return return jsonRes(401, { result: 'error', msg: 'Unauthorized: Missing session token' });
+      return jsonRes(401, { result: 'error', msg: 'Error' });
     }
 
     const token = authHeader.split(' ')[1];
     const { data: { user }, error } = await supabase.auth.getUser(token);
 
     if (error || !user) {
-      return return jsonRes(401, { result: 'error', msg: 'Unauthorized: Invalid or expired session' });
+      return jsonRes(401, { result: 'error', msg: 'Error' });
     }
 
     try {
@@ -74,7 +74,7 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
       });
     } catch (clientErr) {
       console.error("Failed to create request-scoped client:", clientErr);
-      return return jsonRes(500, { result: 'error', msg: 'Failed to authenticate database client.' });
+      return jsonRes(500, { result: 'error', msg: 'Error' });
     }
   }
 
@@ -91,7 +91,7 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
         // Map to response format
         const responseData = {};
         courses.forEach(course => {
-            let cost = "무료 / 별도 문의";
+            let cost = 'Free';
             let paymentInfo = course.payment_info || "";
             if (paymentInfo.includes('|||')) {
               const parts = paymentInfo.split('|||');
@@ -122,7 +122,7 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
               current: course.current || 0
             };
         });
-        return return jsonRes(200, responseData);
+        return jsonRes(200, responseData);
       } else {
         // Admin Request: Fetch courses and full applicant list
         const { data: courses, error } = await dbClient
@@ -148,7 +148,7 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
             councilType: ""
           }));
 
-          let cost = "무료 / 별도 문의";
+          let cost = 'Free';
           let paymentInfo = course.payment_info || "";
           if (paymentInfo.includes('|||')) {
               const parts = paymentInfo.split('|||');
@@ -179,11 +179,11 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
             applicants: apps
           };
         });
-        return return jsonRes(200, responseData);
+        return jsonRes(200, responseData);
       }
     } catch (err) {
       console.error('Database GET Error:', err);
-      return return jsonRes(500, { result: 'error', msg: err.message });
+      return jsonRes(500, { result: 'error', msg: err.message });
     }
   }
 
@@ -215,7 +215,7 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
           .select();
 
         if (error) throw error;
-        return return jsonRes(200, { result: 'success', id: data[0].id });
+        return jsonRes(200, { result: 'success', id: data[0].id });
       }
 
       // 2. Update course
@@ -241,7 +241,7 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
           .eq('id', reqBody.id);
 
         if (error) throw error;
-        return return jsonRes(200, { result: 'success' });
+        return jsonRes(200, { result: 'success' });
       }
 
       // 3. Delete course
@@ -252,14 +252,14 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
           .eq('id', reqBody.id);
 
         if (error) throw error;
-        return return jsonRes(200, { result: 'success' });
+        return jsonRes(200, { result: 'success' });
       }
 
       // 4. Submit applicant registration (No action/default action)
       else {
         const courseTitle = reqBody.course;
         if (!courseTitle) {
-          return return jsonRes(400, { result: 'error', msg: 'Missing course title.' });
+          return jsonRes(400, { result: 'error', msg: 'Error' });
         }
 
         // Find course ID by title
@@ -271,7 +271,7 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
 
         if (courseError) throw courseError;
         if (!courseData || courseData.length === 0) {
-          return return jsonRes(404, { result: 'error', msg: '해당 과정을 찾을 수 없습니다.' });
+          return jsonRes(404, { result: 'error', msg: 'Error' });
         }
 
         const courseId = courseData[0].id;
@@ -288,7 +288,7 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
             name: reqBody.name,
             phone: reqBody.phone,
             email: reqBody.email,
-            agree_privacy: reqBody.privacy === '동의함' || reqBody.privacy === 'true' || reqBody.privacy === true
+            agree_privacy: reqBody.privacy === 'Y' || reqBody.privacy === 'Y' || reqBody.privacy === true
           }]);
 
         if (applyError) throw applyError;
@@ -322,13 +322,14 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
           }
         }
 
-        return return jsonRes(200, { result: 'success' });
+        return jsonRes(200, { result: 'success' });
       }
     } catch (err) {
       console.error('Database POST Error:', err);
-      return return jsonRes(500, { result: 'error', msg: err.message });
+      return jsonRes(500, { result: 'error', msg: err.message });
     }
   }
 
-  return return jsonRes(405, { result: 'error', msg: 'Method Not Allowed' });
+  return jsonRes(405, { result: 'error', msg: 'Error' });
 }
+
