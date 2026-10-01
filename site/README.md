@@ -1,7 +1,7 @@
 # DCCI_EDU 교육센터 홈페이지 (Netlify)
 
 ## 1. 개요
-대구상공회의소 교육센터 홈페이지(dcciedu.co.kr)입니다. Netlify(Free 플랜)에서 운영하며, 데이터는 Supabase에 저장합니다.
+대구상공회의소 교육센터 홈페이지(dcciedu.co.kr)입니다. Netlify(Personal 플랜)에서 운영하며, 데이터는 Supabase에 저장합니다.
 
 ## 2. 구조
 - `public/`: 홈페이지(index.html)와 관리자 페이지(admin.html) 등 정적 파일
@@ -32,11 +32,15 @@
 3. **환경 분리 세팅**: Netlify 대시보드의 Environment variables에서 "Contexts"를 활용하여, Production 환경에는 실제 운영 DB 정보를, Deploy Previews 및 Branch Deploys에는 테스트용 DB 정보를 입력합니다.
 4. **테스트 흐름**: 기능 수정 시 dev 브랜치에 Push하거나 Pull Request를 생성하면 Netlify가 자동으로 임시 주소(Deploy Preview)를 만들어 배포합니다. 이곳에서 테스트 DB로 안전하게 검증을 마친 후 main에 병합(Merge)하여 운영에 반영합니다.
 
-## 6. 테스트 가이드
+## 6. 관리자 로그인 (구글)
+- 관리자 페이지는 "Google로 로그인"(Supabase OAuth)을 사용합니다. 관리자 역할(`app_metadata.role = 'admin'`)이 있는 계정만 들어갈 수 있습니다.
+- 설정 위치: Google Cloud Console OAuth 클라이언트(승인된 리디렉션 URI = Supabase 콜백 URL), Supabase Authentication → Providers → Google, URL Configuration(사이트 주소와 `/admin`, `/admin.html`).
+
+## 6-1. 테스트 가이드
 - 별도의 테스트용 Supabase 프로젝트(무료)를 생성한 뒤, 위 '테스트 배포' 환경변수에 연결하여 모의 검증을 진행하는 것을 권장합니다.
 - 부득이 실제 DB로 테스트해야 한다면, 운영 중인 신청 내역과 섞이지 않도록 제목에 "[테스트]"가 포함된 가짜 교육을 생성해 진행하세요.
 
-## 7. 월 크레딧 소비 추정 (Netlify Free 플랜 - 300 크레딧/월)
+## 7. 월 크레딧 소비 추정 (Netlify Personal 플랜 - 플랜별 제공 크레딧은 Usage & billing에서 확인)
 - **운영 배포 횟수**: 성공적인 빌드 1회당 약 10~15 크레딧 소모 (월 5회 미만 권장). PR을 통한 Deploy Preview도 빌드 크레딧을 소모하므로 꼭 필요할 때만 Push하세요.
 - **웹 요청 및 대역폭**: 1GB 트래픽 당 약 20 크레딧. 정적 HTML 기반이므로 트래픽 소모는 매우 적습니다. (월 5GB 이하 예상 = 약 100 크레딧)
 - **서버 실행(Functions)**: 호출 수 및 실행 시간(GB-s) 기반이나, 현재 규모에서는 무시할 수준입니다.
