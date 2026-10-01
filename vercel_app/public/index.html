@@ -130,11 +130,11 @@
                         <thead class="bg-gray-50">
                             <tr>
                                 <th
-                                    class="w-[240px] px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                                    일자</th>
-                                <th
                                     class="w-[150px] px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider hidden md:table-cell">
                                     구분</th>
+                                <th
+                                    class="w-[240px] px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                    일자</th>
                                 <th
                                     class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
                                     과정명</th>
@@ -746,8 +746,8 @@
 
                 scheduleBody.innerHTML += `
                     <tr class="hover:bg-gray-50 cursor-pointer transition-colors" onclick="loadDetail('${id}')">
-                        <td class="px-4 py-3 text-gray-500 whitespace-nowrap font-medium">${item.date || "일정 미정"}</td>
                         <td class="px-4 py-3 text-blue-700 font-bold whitespace-nowrap text-xs hidden md:table-cell">${shortCat}</td>
+                        <td class="px-4 py-3 text-gray-500 whitespace-nowrap font-medium">${item.date || "일정 미정"}</td>
                         <td class="px-4 py-3 text-gray-900 font-bold whitespace-nowrap">${item.title}</td>
                         <td class="px-4 py-3 whitespace-nowrap">${statusBadge}</td>
                     </tr>`;
