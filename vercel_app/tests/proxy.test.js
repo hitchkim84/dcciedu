@@ -409,3 +409,10 @@ test('OPTIONS preflight returns CORS headers', async () => {
   assert.strictEqual(res.statusCode, 200);
   assert.match(res.headers['Access-Control-Allow-Headers'], /Authorization/);
 });
+
+test('admin GET formats applicant timestamps in Korea time', async () => {
+  db.education_apply[0].created_at = '2026-10-01T08:22:05Z';
+  const handler = loadHandler();
+  const res = await call(handler, { type: 'admin', token: 'admin-token' });
+  assert.strictEqual(res.json[FULL_ID].applicants[0].timestamp, '2026. 10. 01 17:22:05');
+});

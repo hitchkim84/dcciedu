@@ -325,6 +325,7 @@
         let supabaseClient;
         let sessionToken = null; // JWT Access Token
         let allCourses = {}; // 데이터 저장용
+        let statusCourses = []; // 신청자 현황 (명단 표/CSV용)
         let editingCourseId = null; // 현재 수정 중인 ID
 
         // Initialize Supabase and check session on load
@@ -354,6 +355,7 @@
                         document.getElementById('status-body').innerHTML = '';
                         document.getElementById('manage-body').innerHTML = '';
                         allCourses = {};
+                        statusCourses = [];
                     }
                 });
 
@@ -536,10 +538,92 @@
                 .catch(err => handleError(tbody, err));
         }
 
+        // 신청자/과정 입력값을 화면에 넣을 때는 반드시 이 함수로 감싼다 (HTML 주입 방지)
+        function escapeHtml(value) {
+            return String(value === undefined || value === null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        const APPLICANT_COLUMNS = [
+            ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['dept', '부서'],
+            ['position', '직위'], ['name', '성명'], ['phone', '연락처'], ['email', '이메일'], ['privacy', '개인정보동의']
+        ];
+
+        function sortedApplicants(item) {
+            return (item.applicants || []).slice().sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+        }
+
+        function renderApplicantsTable(item, idx) {
+            const apps = sortedApplicants(item);
+            if (apps.length === 0) {
+                return '<p class="text-sm text-gray-500 py-2">신청자가 없습니다.</p>';
+            }
+            const head = APPLICANT_COLUMNS.map(([, label]) =>
+                `<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">${label}</th>`).join('');
+            const rows = apps.map((app, i) => `
+                <tr class="border-t">
+                    <td class="px-3 py-2 text-xs text-gray-500">${i + 1}</td>
+                    ${APPLICANT_COLUMNS.map(([key]) => `<td class="px-3 py-2 text-sm text-gray-800">${escapeHtml(app[key])}</td>`).join('')}
+                </tr>`).join('');
+            return `
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm font-bold text-gray-700">신청자 명단 (${apps.length}명)</span>
+                    <button type="button" onclick="downloadApplicantsCsv(${idx})"
+                        class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-bold">엑셀(CSV) 다운로드</button>
+                </div>
+                <div class="overflow-x-auto bg-white border rounded-lg">
+                    <table class="min-w-full whitespace-nowrap">
+                        <thead class="bg-gray-50"><tr><th class="px-3 py-2 text-left text-xs font-bold text-gray-500">No</th>${head}</tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>`;
+        }
+
+        function toggleApplicants(idx) {
+            const row = document.getElementById('applicants-row-' + idx);
+            const arrow = document.getElementById('applicants-arrow-' + idx);
+            if (!row) return;
+            const willOpen = row.classList.contains('hidden');
+            row.classList.toggle('hidden', !willOpen);
+            if (arrow) arrow.textContent = willOpen ? '▼' : '▶';
+        }
+
+        // 엑셀 수식으로 해석될 수 있는 값(=, +, -, @ 시작)은 앞에 '를 붙여 글자로 저장
+        function csvCell(value) {
+            let s = String(value === undefined || value === null ? '' : value);
+            if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+            return '"' + s.replace(/"/g, '""') + '"';
+        }
+
+        function downloadApplicantsCsv(idx) {
+            const item = statusCourses[idx];
+            if (!item) return;
+            const apps = sortedApplicants(item);
+            const lines = [
+                ['No', ...APPLICANT_COLUMNS.map(([, label]) => label)].map(csvCell).join(','),
+                ...apps.map((app, i) => [i + 1, ...APPLICANT_COLUMNS.map(([key]) => app[key])].map(csvCell).join(','))
+            ];
+            const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const safeTitle = String(item.title || '과정').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60);
+            a.href = url;
+            a.download = `${safeTitle}_신청자명단.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
         function renderStatusTable(data, tbody) {
             tbody.innerHTML = '';
+            statusCourses = [];
             if (data.result === 'error') {
-                tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-10 text-center text-red-500 font-bold">오류: ${data.msg}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-10 text-center text-red-500 font-bold">오류: ${escapeHtml(data.msg)}</td></tr>`;
                 return;
             }
 
@@ -562,7 +646,9 @@
                 return;
             }
 
-            courses.forEach(item => {
+            statusCourses = courses;
+            let html = '';
+            courses.forEach((item, idx) => {
                 let statusBadge = `<span class="px-2 py-1 bg-green-100 text-green-800 text-xs font-bold rounded-full">접수중</span>`;
                 const cap = parseInt(item.capacity || 0);
                 const cur = parseInt(item.current || 0);
@@ -575,16 +661,17 @@
                     if (now > deadlineDate) statusBadge = `<span class="px-2 py-1 bg-gray-100 text-gray-500 text-xs font-bold rounded-full">기한마감</span>`;
                 }
 
-                tbody.innerHTML += `
+                html += `
                     <tr class="hover:bg-blue-50 border-b">
                         <td class="px-6 py-4">${statusBadge}</td>
                         <td class="px-6 py-4">
-                            <div class="text-sm font-bold text-gray-900 flex items-center">
-                                ${item.title}
-                            </div>
-                            <div class="text-xs text-gray-500">${item.category}</div>
+                            <button type="button" onclick="toggleApplicants(${idx})"
+                                class="text-sm font-bold text-gray-900 flex items-center text-left hover:text-blue-700 hover:underline focus:outline-none">
+                                <span id="applicants-arrow-${idx}" class="text-xs text-gray-400 mr-2">▶</span>${escapeHtml(item.title)}
+                            </button>
+                            <div class="text-xs text-gray-500 ml-5">${escapeHtml(item.category)}</div>
                         </td>
-                        <td class="px-6 py-4 text-gray-500 text-sm">${item.date}</td>
+                        <td class="px-6 py-4 text-gray-500 text-sm">${escapeHtml(item.date)}</td>
                         <td class="px-6 py-4">
                             <div class="flex items-center">
                                 <div class="w-full bg-gray-200 rounded-full h-2.5 mr-2 max-w-[100px]">
@@ -593,9 +680,13 @@
                                 <span class="text-sm font-bold text-gray-700">${cur} / ${cap > 0 ? cap : '-'}명</span>
                             </div>
                         </td>
-                        <td class="px-6 py-4 text-gray-500 text-sm">${item.deadline ? item.deadline.split('T')[0] : '상시/별도'}</td>
+                        <td class="px-6 py-4 text-gray-500 text-sm">${item.deadline ? escapeHtml(String(item.deadline).split('T')[0]) : '상시/별도'}</td>
+                    </tr>
+                    <tr id="applicants-row-${idx}" class="hidden bg-gray-50 border-b">
+                        <td colspan="5" class="px-6 py-4">${renderApplicantsTable(item, idx)}</td>
                     </tr>`;
             });
+            tbody.innerHTML = html;
         }
 
         // --- 기능 3: 관리 (수정/삭제) ---
@@ -636,10 +727,10 @@
                 tbody.innerHTML += `
                     <tr class="hover:bg-gray-50">
                         <td class="px-6 py-4">
-                            <div class="text-sm font-bold text-gray-900">${item.title}</div>
-                            <div class="text-xs text-gray-500">${item.category}</div>
+                            <div class="text-sm font-bold text-gray-900">${escapeHtml(item.title)}</div>
+                            <div class="text-xs text-gray-500">${escapeHtml(item.category)}</div>
                         </td>
-                        <td class="px-6 py-4 text-gray-500 text-sm">${item.date}</td>
+                        <td class="px-6 py-4 text-gray-500 text-sm">${escapeHtml(item.date)}</td>
                         <td class="px-6 py-4 text-center whitespace-nowrap">
                             <button onclick="loadCourseForEdit('${item.id}')" class="text-blue-600 hover:text-blue-900 font-bold mr-2 border border-blue-200 px-3 py-1 rounded hover:bg-blue-50 transition-colors">수정</button>
                             <button onclick="deleteCourse('${item.id}')" class="text-red-600 hover:text-red-900 font-bold border border-red-200 px-3 py-1 rounded hover:bg-red-50 transition-colors">삭제</button>
