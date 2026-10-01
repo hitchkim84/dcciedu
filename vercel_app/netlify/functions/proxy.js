@@ -30,19 +30,7 @@ function formatTimestamp(isoString) {
 }
 
 exports.handler = async function(event, context) {
-function jsonRes(code, data, extraHeaders = {}) {
-    return {
-        statusCode: code,
-        headers: {
-            'Access-Control-Allow-Credentials': true,
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET,OPTIONS,PATCH,DELETE,POST,PUT',
-            'Access-Control-Allow-Headers': 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization',
-            ...extraHeaders
-        },
-        body: JSON.stringify(data)
-    };
-}
+function jsonRes(code, data, extraHeaders = {}) { return { statusCode: code, headers: { 'Access-Control-Allow-Credentials': true, 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,OPTIONS,PATCH,DELETE,POST,PUT', 'Access-Control-Allow-Headers': 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization', ...extraHeaders }, body: JSON.stringify(data) }; }
 let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){reqBody=Object.fromEntries(new URLSearchParams(event.body))}}
   // CORS headers
   
@@ -94,18 +82,16 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
   if (event.httpMethod === 'GET') {
     try {
       if (isPublic) {
-        headers['Cache-Control'] = 's-maxage=30, stale-while-revalidate=3600';
+        res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=3600");
         // Query the public view which has the pre-calculated applicant counts
-        const { data: courses, error } = await dbClient
-          .from('public_courses')
-          .select('*');
+        const { data: courses, error } = await dbClient.from('courses').select('*, education_apply(id)');
 
         if (error) throw error;
 
         // Map to response format
         const responseData = {};
         courses.forEach(course => {
-            let cost = "臾대즺 / 蹂꾨룄 臾몄쓽";
+            let cost = "무료 / 별도 문의";
             let paymentInfo = course.payment_info || "";
             if (paymentInfo.includes('|||')) {
               const parts = paymentInfo.split('|||');
@@ -156,13 +142,13 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
             name: app.name || "",
             phone: app.phone || "",
             email: app.email || "",
-            privacy: app.agree_privacy ? "?숈쓽?? : "誘몃룞??,
+            privacy: app.agree_privacy ? "Y" : "N",
             memberType: "",
             feeStatus: "",
             councilType: ""
           }));
 
-          let cost = "臾대즺 / 蹂꾨룄 臾몄쓽";
+          let cost = "무료 / 별도 문의";
           let paymentInfo = course.payment_info || "";
           if (paymentInfo.includes('|||')) {
               const parts = paymentInfo.split('|||');
@@ -285,7 +271,7 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
 
         if (courseError) throw courseError;
         if (!courseData || courseData.length === 0) {
-          return return jsonRes(404, { result: 'error', msg: '?대떦 怨쇱젙??李얠쓣 ???놁뒿?덈떎.' });
+          return return jsonRes(404, { result: 'error', msg: '해당 과정을 찾을 수 없습니다.' });
         }
 
         const courseId = courseData[0].id;
@@ -302,7 +288,7 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
             name: reqBody.name,
             phone: reqBody.phone,
             email: reqBody.email,
-            agree_privacy: reqBody.privacy === '?숈쓽?? || reqBody.privacy === 'true' || reqBody.privacy === true
+            agree_privacy: reqBody.privacy === '동의함' || reqBody.privacy === 'true' || reqBody.privacy === true
           }]);
 
         if (applyError) throw applyError;
@@ -346,7 +332,3 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
 
   return return jsonRes(405, { result: 'error', msg: 'Method Not Allowed' });
 }
-
-
-
-
