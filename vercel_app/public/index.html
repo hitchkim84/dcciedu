@@ -401,7 +401,7 @@
                                     readonly></div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div><label class="block text-sm font-bold text-gray-700">회사명</label><input type="text"
-                                        id="bizName" required
+                                        id="bizName" required maxlength="100"
                                         class="mt-1 w-full border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500"
                                         placeholder="예: (주)대구상공회의소"></div>
 
@@ -412,17 +412,17 @@
                             </div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div><label class="block text-sm font-bold text-gray-700">부서</label><input type="text"
-                                        id="deptName" required
+                                        id="deptName" required maxlength="50"
                                         class="mt-1 w-full border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500"
                                         placeholder="예: 기획홍보팀"></div>
                                 <div><label class="block text-sm font-bold text-gray-700">직위</label><input type="text"
-                                        id="position" required
+                                        id="position" required maxlength="50"
                                         class="mt-1 w-full border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500"
                                         placeholder="예: 과장"></div>
                             </div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div><label class="block text-sm font-bold text-gray-700">성명</label><input type="text"
-                                        id="applicantName" required
+                                        id="applicantName" required maxlength="50"
                                         class="mt-1 w-full border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500"
                                         placeholder="예: 홍길동"></div>
 
@@ -432,7 +432,7 @@
                                         placeholder="010-1234-5678 (숫자만)"></div>
                             </div>
                             <div><label class="block text-sm font-bold text-gray-700">이메일</label><input type="email"
-                                    id="email" required
+                                    id="email" required maxlength="100"
                                     class="mt-1 w-full border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500"
                                     placeholder="예: user@example.com"></div>
 
@@ -667,6 +667,15 @@
         }
 
         /**
+         * [보안] 화면에 넣는 문자열의 HTML 특수문자를 바꿔 스크립트 삽입(XSS)을 막는다.
+         */
+        function escapeHtml(value) {
+            return String(value === undefined || value === null ? '' : value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        /**
          * [렌더링] 카테고리별 목록 (실무자/FTA)
          */
         function renderLists() {
@@ -692,15 +701,15 @@
                 const cardHTML = `
                     <div class="bg-white rounded-xl shadow border border-gray-100 flex flex-col h-full ${!isEnded ? 'hover:shadow-2xl transition-all duration-300' : ''}">
                         <div class="bg-gray-50 px-6 py-4 border-b border-gray-100 flex-none flex justify-between items-center">
-                            <span class="text-xs font-bold text-gray-800">${item.category}</span>
+                            <span class="text-xs font-bold text-gray-800">${escapeHtml(item.category)}</span>
                             <span class="px-2 py-0.5 ${isEnded ? 'bg-gray-200 text-gray-500' : 'bg-blue-100 text-blue-700'} text-[10px] font-bold rounded">${isEnded ? '종료' : '진행중'}</span>
                         </div>
                         <div class="p-6 flex flex-col flex-grow">
-                            <h3 class="text-xl font-bold text-gray-900 mb-2 tracking-tight break-keep">${item.title}</h3>
-                            <p class="${isEnded ? 'text-gray-400' : 'text-blue-900'} text-sm font-semibold">${item.date}</p>
+                            <h3 class="text-xl font-bold text-gray-900 mb-2 tracking-tight break-keep">${escapeHtml(item.title)}</h3>
+                            <p class="${isEnded ? 'text-gray-400' : 'text-blue-900'} text-sm font-semibold">${escapeHtml(item.date)}</p>
                             <p class="text-gray-500 text-sm mb-6 mt-1 flex items-start font-medium">
                                 <svg class="w-4 h-4 mr-1 text-gray-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                                <span class="break-keep">${item.place}</span>
+                                <span class="break-keep">${escapeHtml(item.place)}</span>
                             </p>
                             <button onclick="loadDetail('${id}')" class="${btnClass}">${btnText}</button>
                         </div>
@@ -745,9 +754,9 @@
 
                 scheduleBody.innerHTML += `
                     <tr class="hover:bg-gray-50 cursor-pointer transition-colors" onclick="loadDetail('${id}')">
-                        <td class="px-4 py-3 text-blue-700 font-bold whitespace-nowrap text-xs hidden md:table-cell">${shortCat}</td>
-                        <td class="px-4 py-3 text-gray-500 whitespace-nowrap font-medium">${item.date || "일정 미정"}</td>
-                        <td class="px-4 py-3 text-gray-900 font-bold whitespace-nowrap">${item.title}</td>
+                        <td class="px-4 py-3 text-blue-700 font-bold whitespace-nowrap text-xs hidden md:table-cell">${escapeHtml(shortCat)}</td>
+                        <td class="px-4 py-3 text-gray-500 whitespace-nowrap font-medium">${escapeHtml(item.date || "일정 미정")}</td>
+                        <td class="px-4 py-3 text-gray-900 font-bold whitespace-nowrap">${escapeHtml(item.title)}</td>
                         <td class="px-4 py-3 whitespace-nowrap">${statusBadge}</td>
                     </tr>`;
             });

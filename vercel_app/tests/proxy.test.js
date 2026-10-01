@@ -9,8 +9,7 @@ const COURSE_ID = '11111111-1111-4111-8111-111111111111';
 const FULL_ID = '22222222-2222-4222-8222-222222222222';
 
 let db;
-let sheetCalls;
-let sheetReply;
+let outboundCalls;
 let viewExists;
 
 function resetDb() {
@@ -23,8 +22,7 @@ function resetDb() {
       { id: 'a-full', course_id: FULL_ID, req_id: 'x', name: '기존', company: 'A', email: 'a@a', phone: '010', agree_privacy: true, sync_status: 'success' }
     ]
   };
-  sheetCalls = [];
-  sheetReply = { status: 200, body: JSON.stringify({ result: 'success' }) };
+  outboundCalls = [];
   viewExists = true;
 }
 
@@ -107,7 +105,9 @@ function raise(message) {
   return { data: null, error: { message, code: 'P0001' } };
 }
 
+let lastRpcParams = null;
 function atomicCourseApply(p) {
+  lastRpcParams = p;
   const existing = db.education_apply.find(a => a.req_id === p.p_req_id);
   if (existing) {
     if (existing.course_id !== p.p_course_id) return raise('요청 식별자 충돌(Collision). 비정상적인 재시도입니다.');
@@ -150,15 +150,15 @@ Module._load = function (request, parent, isMain) {
 
 function loadHandler(env) {
   for (const k of ['SUPABASE_URL', 'SUPABASE_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_SCRIPT_URL', 'APPS_SCRIPT_SECRET']) delete process.env[k];
-  Object.assign(process.env, { SUPABASE_URL: 'https://example.supabase.co', SUPABASE_KEY: 'anon', GOOGLE_SCRIPT_URL: 'https://script.example/exec' }, env);
+  Object.assign(process.env, { SUPABASE_URL: 'https://example.supabase.co', SUPABASE_KEY: 'anon' }, env);
   delete require.cache[require.resolve(PROXY_PATH)];
   return require(PROXY_PATH).handler;
 }
 
-global.fetch = async (url, init) => {
-  sheetCalls.push(Object.fromEntries(new URLSearchParams(init.body.toString())));
-  if (sheetReply.throws) throw new Error(sheetReply.throws);
-  return { ok: sheetReply.status < 400, status: sheetReply.status, text: async () => sheetReply.body };
+// 신청 정보는 DB에만 저장해야 하므로 외부로 나가는 요청은 모두 기록해 검사한다.
+global.fetch = async (url) => {
+  outboundCalls.push(String(url));
+  return { ok: true, status: 200, text: async () => '{}' };
 };
 
 function applyForm(overrides = {}) {
@@ -221,9 +221,7 @@ test('application from index.html without action field is accepted', async () =>
   const row = db.education_apply.find(a => a.course_id === COURSE_ID);
   assert.ok(row);
   assert.strictEqual(row.agree_privacy, true);
-  assert.strictEqual(sheetCalls.length, 1);
-  assert.strictEqual(sheetCalls[0].apply_id, row.id);
-  assert.strictEqual(sheetCalls[0].course, '세무회계 실무');
+  assert.strictEqual(row.company, '대구상사');
 });
 
 test('application with action=apply is accepted', async () => {
@@ -308,38 +306,34 @@ test('system DB errors are not exposed to the user', async () => {
   assert.doesNotMatch(res.json.msg, /Cannot|undefined|null/);
 });
 
-// ---- Sheet sync ----------------------------------------------------------
-test('sync_status=success is written with the service-role key', async () => {
-  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service', APPS_SCRIPT_SECRET: 's3' });
-  await call(handler, { method: 'POST', body: applyForm() });
-  const row = db.education_apply.find(a => a.course_id === COURSE_ID);
-  assert.strictEqual(row.sync_status, 'success');
-  assert.strictEqual(sheetCalls[0].secret, 's3');
+// ---- Input validation / data minimisation --------------------------------
+test('too long input is rejected without calling the DB', async () => {
+  const handler = loadHandler();
+  const res = await call(handler, { method: 'POST', body: applyForm({ name: '가'.repeat(51) }) });
+  assert.strictEqual(res.statusCode, 400);
+  assert.strictEqual(db.education_apply.length, 1);
 });
 
-test('Apps Script error reply is recorded as failed but the application still succeeds', async () => {
-  sheetReply = { status: 200, body: JSON.stringify({ result: 'error', msg: 'Unauthorized' }) };
-  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+test('invalid email is rejected', async () => {
+  const handler = loadHandler();
+  const res = await call(handler, { method: 'POST', body: applyForm({ email: 'not-an-email' }) });
+  assert.strictEqual(res.statusCode, 400);
+  assert.strictEqual(db.education_apply.length, 1);
+});
+
+test('applications are stored only in the DB (no outbound requests, even with an old sheet URL set)', async () => {
+  const handler = loadHandler({ GOOGLE_SCRIPT_URL: 'https://script.example/exec', SUPABASE_SERVICE_ROLE_KEY: 'service' });
   const res = await call(handler, { method: 'POST', body: applyForm() });
   assert.strictEqual(res.statusCode, 200);
-  const row = db.education_apply.find(a => a.course_id === COURSE_ID);
-  assert.strictEqual(row.sync_status, 'failed');
-  assert.match(row.sync_error, /Unauthorized/);
+  assert.deepStrictEqual(outboundCalls, []);
 });
 
-test('network failure to Apps Script does not fail the application', async () => {
-  sheetReply = { throws: 'ECONNRESET' };
-  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
-  const res = await call(handler, { method: 'POST', body: applyForm() });
-  assert.strictEqual(res.statusCode, 200);
-  assert.strictEqual(db.education_apply.find(a => a.course_id === COURSE_ID).sync_status, 'failed');
-});
-
-test('without service-role key the application succeeds and sync_status stays pending', async () => {
+test('lookup id and password hash are not stored', async () => {
   const handler = loadHandler();
   const res = await call(handler, { method: 'POST', body: applyForm() });
   assert.strictEqual(res.statusCode, 200);
-  assert.strictEqual(db.education_apply.find(a => a.course_id === COURSE_ID).sync_status, 'pending');
+  assert.strictEqual(lastRpcParams.p_lookup_id, null);
+  assert.strictEqual(lastRpcParams.p_lookup_password_hash, null);
 });
 
 // ---- Admin ---------------------------------------------------------------
@@ -356,12 +350,13 @@ test('admin endpoints require a valid token', async () => {
   assert.strictEqual((await call(handler, { type: 'admin', token: 'bogus' })).statusCode, 401);
 });
 
-test('admin GET returns applicants; non-admin user sees none', async () => {
+test('admin GET returns applicants; logged-in non-admin is refused by the server', async () => {
   const handler = loadHandler();
   const admin = await call(handler, { type: 'admin', token: 'admin-token' });
   assert.strictEqual(admin.json[FULL_ID].applicants.length, 1);
   const user = await call(handler, { type: 'admin', token: 'user-token' });
-  assert.strictEqual(user.json[FULL_ID].applicants.length, 0);
+  assert.strictEqual(user.statusCode, 403);
+  assert.strictEqual(user.json.applicants, undefined);
 });
 
 test('admin add/update/delete course; non-admin gets 403 or error', async () => {
@@ -381,26 +376,19 @@ test('admin add/update/delete course; non-admin gets 403 or error', async () => 
   assert.strictEqual(delUser.statusCode, 403);
 
   const addUser = await call(handler, { method: 'POST', type: 'admin', token: 'user-token', body: new URLSearchParams({ action: 'add_course', title: 'X' }).toString() });
-  assert.strictEqual(addUser.statusCode, 500);
-  assert.doesNotMatch(addUser.json.msg, /row-level security/);
+  assert.strictEqual(addUser.statusCode, 403);
+  assert.ok(!db.courses.find(c => c.title === 'X'));
 
   const del = await call(handler, { method: 'POST', type: 'admin', token: 'admin-token', body: new URLSearchParams({ action: 'delete_course', id }).toString() });
   assert.strictEqual(del.statusCode, 200);
   assert.ok(!db.courses.find(c => c.id === id));
 });
 
-test('retry_sync works for admin and is invisible to non-admin', async () => {
+test('retry_sync (old sheet re-send) is no longer accepted', async () => {
   const handler = loadHandler();
-  db.education_apply[0].sync_status = 'failed';
-  const user = await call(handler, { method: 'POST', type: 'admin', token: 'user-token', body: new URLSearchParams({ action: 'retry_sync', id: 'a-full' }).toString() });
-  assert.strictEqual(user.statusCode, 404);
-  assert.strictEqual(sheetCalls.length, 0);
-
-  const admin = await call(handler, { method: 'POST', type: 'admin', token: 'admin-token', body: new URLSearchParams({ action: 'retry_sync', id: 'a-full' }).toString() });
-  assert.strictEqual(admin.statusCode, 200, admin.body);
-  assert.strictEqual(db.education_apply[0].sync_status, 'success');
-  assert.strictEqual(db.education_apply[0].sync_retries, 1);
-  assert.strictEqual(sheetCalls[0].apply_id, 'a-full');
+  const res = await call(handler, { method: 'POST', type: 'admin', token: 'admin-token', body: new URLSearchParams({ action: 'retry_sync', id: 'a-full' }).toString() });
+  assert.strictEqual(res.statusCode, 400);
+  assert.deepStrictEqual(outboundCalls, []);
 });
 
 test('OPTIONS preflight returns CORS headers', async () => {

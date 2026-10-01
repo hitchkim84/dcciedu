@@ -8,7 +8,10 @@
 - `netlify/functions/`: 서버리스 함수(`proxy.js`, `config.js`). `exports.handler = async (event, context)` 형태입니다.
 - `netlify.toml`: 클라이언트가 호출하는 `/api/*` 경로를 `/.netlify/functions/*`로 연결하는 리다이렉트 설정
 - `sql/`: Supabase SQL Editor에서 순서대로 실행하는 DB 설정 스크립트
-- `scripts/google_apps_script.js`: 구글 시트 연동용 Apps Script 코드
+- `public/vendor/`: 관리자 페이지가 쓰는 Supabase 라이브러리 (외부 CDN 대신 직접 제공, 버전 고정)
+- `tests/proxy.test.js`: 서버 함수 테스트. `node --test tests/proxy.test.js`로 실행
+
+신청 정보는 Supabase DB에만 저장하며, 구글 시트 등 외부로 보내지 않습니다. 신청자 명단은 관리자 페이지에서 조회하고 CSV로 내려받습니다.
 
 ## 3. 실행 명령 및 의존성
 - 의존성 설치: `npm install`
@@ -19,10 +22,8 @@
 
 - SUPABASE_URL: Supabase 프로젝트 URL
 - SUPABASE_KEY: Supabase 익명(anon) 퍼블릭 키
-- SUPABASE_SERVICE_ROLE_KEY: Supabase 관리자(service_role) 키 (내부 권한 검증 및 조회용, 절대 외부에 노출 금지)
-- ADMIN_EMAIL: 관리자용 이메일
-- GOOGLE_SCRIPT_URL: 구글 Apps Script 배포 주소
-- APPS_SCRIPT_SECRET: 구글 Apps Script 통신 시 사용할 암호 키
+- SUPABASE_SERVICE_ROLE_KEY: (선택) Supabase 관리자(service_role) 키. 홈페이지의 과정별 신청 인원 집계에만 사용, 절대 외부에 노출 금지
+- NAVER_CLIENT_ID: 네이버 지도 API 클라이언트 ID
 
 ## 5. 테스트 배포와 운영 배포 분리 (GitHub & Netlify 연동)
 잦은 코드 수정으로 인한 운영 크레딧 소모를 방지하려면 다음과 같이 환경을 분리하세요.
@@ -32,7 +33,7 @@
 4. **테스트 흐름**: 기능 수정 시 dev 브랜치에 Push하거나 Pull Request를 생성하면 Netlify가 자동으로 임시 주소(Deploy Preview)를 만들어 배포합니다. 이곳에서 테스트 DB로 안전하게 검증을 마친 후 main에 병합(Merge)하여 운영에 반영합니다.
 
 ## 6. 테스트 가이드
-- 별도의 테스트용 Supabase 프로젝트(무료)와 테스트용 구글 시트를 생성한 뒤, 위 '테스트 배포' 환경변수에 연결하여 모의 검증을 진행하는 것을 권장합니다.
+- 별도의 테스트용 Supabase 프로젝트(무료)를 생성한 뒤, 위 '테스트 배포' 환경변수에 연결하여 모의 검증을 진행하는 것을 권장합니다.
 - 부득이 실제 DB로 테스트해야 한다면, 운영 중인 신청 내역과 섞이지 않도록 제목에 "[테스트]"가 포함된 가짜 교육을 생성해 진행하세요.
 
 ## 7. 월 크레딧 소비 추정 (Netlify Free 플랜 - 300 크레딧/월)
