@@ -1,0 +1,23 @@
+# DCCI_EDU 작업 기준
+
+대구상공회의소 교육센터 홈페이지(dcciedu.co.kr). 모든 작업은 아래 우선순위로 판단한다.
+기준끼리 충돌하면 번호가 앞선 것을 따른다.
+
+## 1. 보안 (개인정보 탈취, 해커 침입 방지)
+- 신청자 개인정보(이름, 연락처, 이메일, 사업자번호 등)는 관리자(`app_metadata.role = 'admin'`)만 조회할 수 있어야 한다. Supabase RLS로 막고, 서버 함수에서도 한 번 더 확인한다.
+- 키·비밀번호·실제 관리자 이메일은 코드나 GitHub에 올리지 않는다. 저장소는 public이다. 비밀값은 Netlify 환경변수에만 둔다.
+- `SUPABASE_SERVICE_ROLE_KEY`는 서버 함수(`netlify/functions/`)에서만 쓰고, 브라우저로 내려보내지 않는다.
+- 사용자 입력은 서버에서 검증하고, 화면에 출력할 때는 이스케이프한다(XSS 방지).
+- 변경 후에는 개인정보가 새로 노출되는 경로가 생기지 않았는지 확인한다.
+
+## 2. 홈페이지 안정성
+- 운영 배포 브랜치는 `netlify-test`다. 여기에 머지하면 바로 실제 사이트에 배포된다.
+- 수정은 작업 브랜치에 모아 두고, 사용자가 확인한 뒤 마지막에 한 번만 배포한다(Netlify 크레딧 절약). PR도 그때 만든다.
+- 배포 전에 `vercel_app`에서 `node --test tests/proxy.test.js`를 실행해 통과를 확인한다.
+- `netlify.toml`이 `vercel_app` 안에 있으므로 Netlify Base directory는 `vercel_app`이다. 폴더 이름이나 `netlify.toml`을 바꾸면 Netlify 설정도 함께 바꿔야 한다.
+- DB 변경은 `vercel_app/sql/`에 번호를 붙인 SQL 파일로 남긴다. 여러 번 실행해도 안전하게 작성하고, Supabase SQL Editor에서 직접 실행한다.
+
+## 3. 쉬운 수정
+- 구조는 단순하게 유지한다. 정적 HTML(`public/`), 서버 함수(`netlify/functions/`), SQL(`sql/`).
+- 새 라이브러리나 빌드 단계를 늘리지 않는다.
+- 주석과 문서는 한국어로, 파일 인코딩은 UTF-8로 쓴다.
