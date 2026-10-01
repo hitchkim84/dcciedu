@@ -133,6 +133,9 @@
                                     class="w-[240px] px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
                                     일자</th>
                                 <th
+                                    class="w-[150px] px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider hidden md:table-cell">
+                                    구분</th>
+                                <th
                                     class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
                                     과정명</th>
                                 <th
@@ -736,9 +739,15 @@
                     ? `<span class="px-2 bg-red-100 text-red-800 text-xs font-bold rounded-full">접수마감 ${countStr}</span>`
                     : `<span class="px-2 bg-green-100 text-green-800 text-xs font-bold rounded-full">접수중 ${countStr}</span>`;
 
+                let shortCat = item.category || "";
+                if (shortCat.includes('>')) {
+                    shortCat = shortCat.split('>')[1].trim();
+                }
+
                 scheduleBody.innerHTML += `
                     <tr class="hover:bg-gray-50 cursor-pointer transition-colors" onclick="loadDetail('${id}')">
                         <td class="px-4 py-3 text-gray-500 whitespace-nowrap font-medium">${item.date || "일정 미정"}</td>
+                        <td class="px-4 py-3 text-blue-700 font-bold whitespace-nowrap text-xs hidden md:table-cell">${shortCat}</td>
                         <td class="px-4 py-3 text-gray-900 font-bold whitespace-nowrap">${item.title}</td>
                         <td class="px-4 py-3 whitespace-nowrap">${statusBadge}</td>
                     </tr>`;
