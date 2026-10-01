@@ -38,7 +38,7 @@ module.exports = async function handler(req, res) {
 
   // OPTIONS: Always Allow (CORS)
   if (event.httpMethod === 'OPTIONS') {
-    res.status(200).end();
+    return { statusCode: 200, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,OPTIONS,PATCH,DELETE,POST,PUT', 'Access-Control-Allow-Headers': 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization' }, body: '' };
     return;
   }
 
@@ -332,4 +332,5 @@ module.exports = async function handler(req, res) {
 
   return return jsonRes(405, { result: 'error', msg: 'Method Not Allowed' });
 }
+
 
