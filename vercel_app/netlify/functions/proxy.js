@@ -31,10 +31,10 @@ function formatTimestamp(isoString) {
 
 module.exports = async function handler(req, res) {
   // CORS headers
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+  
+  
+  
+  
 
   // OPTIONS: Always Allow (CORS)
   if (event.httpMethod === 'OPTIONS') {
@@ -80,7 +80,7 @@ module.exports = async function handler(req, res) {
   if (event.httpMethod === 'GET') {
     try {
       if (isPublic) {
-        res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=3600");
+        headers['Cache-Control'] = 's-maxage=30, stale-while-revalidate=3600';
         // Query the public view which has the pre-calculated applicant counts
         const { data: courses, error } = await dbClient
           .from('public_courses')
@@ -332,5 +332,6 @@ module.exports = async function handler(req, res) {
 
   return return jsonRes(405, { result: 'error', msg: 'Method Not Allowed' });
 }
+
 
 
