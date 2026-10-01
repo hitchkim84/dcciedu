@@ -15,9 +15,9 @@
 ## 2. 홈페이지 안정성
 - 운영 배포 브랜치는 `netlify-test`다. 여기에 머지하면 바로 실제 사이트에 배포된다.
 - 수정은 작업 브랜치에 모아 두고, 사용자가 확인한 뒤 마지막에 한 번만 배포한다(Netlify 크레딧 절약). PR도 그때 만든다.
-- 배포 전에 `vercel_app`에서 `node --test tests/proxy.test.js`를 실행해 통과를 확인한다.
-- `netlify.toml`이 `vercel_app` 안에 있으므로 Netlify Base directory는 `vercel_app`이다. 폴더 이름이나 `netlify.toml`을 바꾸면 Netlify 설정도 함께 바꿔야 한다.
-- DB 변경은 `vercel_app/sql/`에 번호를 붙인 SQL 파일로 남긴다. 여러 번 실행해도 안전하게 작성하고, Supabase SQL Editor에서 직접 실행한다.
+- 배포 전에 `site`에서 `node --test tests/proxy.test.js`를 실행해 통과를 확인한다.
+- `netlify.toml`이 `site` 안에 있으므로 Netlify Base directory는 `site`이다. 폴더 이름이나 `netlify.toml`을 바꾸면 Netlify 설정도 함께 바꿔야 한다.
+- DB 변경은 `site/sql/`에 번호를 붙인 SQL 파일로 남긴다. 여러 번 실행해도 안전하게 작성하고, Supabase SQL Editor에서 직접 실행한다.
 
 ## 3. 쉬운 수정
 - 구조는 단순하게 유지한다. 정적 HTML(`public/`), 서버 함수(`netlify/functions/`), SQL(`sql/`).
