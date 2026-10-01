@@ -255,75 +255,64 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
         return jsonRes(200, { result: 'success' });
       }
 
-      // 4. Submit applicant registration (No action/default action)
-      else {
-        const courseTitle = reqBody.course;
-        if (!courseTitle) {
-          return jsonRes(400, { result: 'error', msg: 'Error' });
+              else if (action === 'apply') {
+          const courseTitle = reqBody.course;
+          if (!courseTitle) return jsonRes(400, { result: 'error', msg: 'Course title missing' });
+          
+          const { data: courseData, error: courseError } = await dbClient.from('courses').select('id').eq('title', courseTitle.trim()).limit(1);
+          if (courseError) throw courseError;
+          if (!courseData || courseData.length === 0) return jsonRes(404, { result: 'error', msg: 'Course not found' });
+          
+          const courseId = courseData[0].id;
+          const req_id = reqBody.phone + '_' + courseId;
+          const crypto = require('crypto');
+          const lookupId = crypto.randomBytes(4).toString('hex').toUpperCase();
+          const rawPwd = reqBody.phone.slice(-4);
+          const pwdHash = crypto.createHash('sha256').update(rawPwd).digest('hex');
+
+          const { data: applyId, error: applyError } = await dbClient.rpc('atomic_course_apply', {
+              p_course_id: courseId, p_req_id: req_id,
+              p_company: reqBody.bizName || '', p_biz_no: reqBody.bizNo || '', p_dept: reqBody.dept || '',
+              p_position: reqBody.position || '', p_name: reqBody.name || '', p_phone: reqBody.phone || '',
+              p_email: reqBody.email || '', p_agree_privacy: reqBody.privacy === 'Y' || reqBody.privacy === 'true' || reqBody.privacy === true,
+              p_lookup_id: lookupId, p_lookup_password_hash: pwdHash
+          });
+          if (applyError) throw applyError;
+
+          const googleScriptUrl = process.env.GOOGLE_SCRIPT_URL;
+          if (googleScriptUrl) {
+            try {
+              const formBody = new URLSearchParams({ course: courseTitle, bizName: reqBody.bizName, bizNo: reqBody.bizNo, dept: reqBody.dept, position: reqBody.position, name: reqBody.name, phone: reqBody.phone, email: reqBody.email, privacy: reqBody.privacy });
+              await fetch(googleScriptUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formBody });
+              await dbClient.from('education_apply').update({ sync_status: 'success' }).eq('id', applyId);
+            } catch (err) {
+              await dbClient.from('education_apply').update({ sync_status: 'failed', sync_error: err.message }).eq('id', applyId);
+            }
+          }
+          return jsonRes(200, { result: 'success' });
         }
-
-        // Find course ID by title
-        const { data: courseData, error: courseError } = await dbClient
-          .from('courses')
-          .select('id')
-          .eq('title', courseTitle.trim())
-          .limit(1);
-
-        if (courseError) throw courseError;
-        if (!courseData || courseData.length === 0) {
-          return jsonRes(404, { result: 'error', msg: 'Error' });
-        }
-
-        const courseId = courseData[0].id;
-
-        // Insert registration record to Supabase
-        const { error: applyError } = await dbClient
-          .from('education_apply')
-          .insert([{
-            course_id: courseId,
-            company: reqBody.bizName,
-            biz_no: reqBody.bizNo,
-            dept: reqBody.dept,
-            position: reqBody.position,
-            name: reqBody.name,
-            phone: reqBody.phone,
-            email: reqBody.email,
-            agree_privacy: reqBody.privacy === 'Y' || reqBody.privacy === 'Y' || reqBody.privacy === true
-          }]);
-
-        if (applyError) throw applyError;
-
-        // Sync registration to Google Sheets (if configured)
-        const googleScriptUrl = process.env.GOOGLE_SCRIPT_URL;
-        if (googleScriptUrl) {
+        else if (action === 'retry_sync') {
+          if (isPublic || !isAdmin) return jsonRes(403, { result: 'error', msg: 'Forbidden' });
+          const { data: applyData, error: applyDataError } = await dbClient.from('education_apply').select('*, courses(title)').eq('id', reqBody.id).single();
+          if (applyDataError || !applyData) return jsonRes(404, { result: 'error', msg: 'Application not found' });
+          
+          const googleScriptUrl = process.env.GOOGLE_SCRIPT_URL;
+          if (!googleScriptUrl) return jsonRes(500, { result: 'error', msg: 'Google Script URL not configured' });
+          
           try {
-            const formBody = new URLSearchParams({
-              course: reqBody.course,
-              bizName: reqBody.bizName,
-              bizNo: reqBody.bizNo,
-              dept: reqBody.dept,
-              position: reqBody.position,
-              name: reqBody.name,
-              phone: reqBody.phone,
-              email: reqBody.email,
-              privacy: reqBody.privacy
-            });
-
-            await fetch(googleScriptUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-              },
-              body: formBody
-            });
-          } catch (syncErr) {
-            console.error('Failed to sync to Google Sheets:', syncErr);
-            // Non-blocking: we do not fail the request if Google Sheets sync fails
+              const formBody = new URLSearchParams({
+                  course: applyData.courses.title, bizName: applyData.company, bizNo: applyData.biz_no,
+                  dept: applyData.dept, position: applyData.position, name: applyData.name,
+                  phone: applyData.phone, email: applyData.email, privacy: 'Y'
+              });
+              await fetch(googleScriptUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: formBody });
+              await dbClient.from('education_apply').update({ sync_status: 'success', sync_error: null, sync_retries: (applyData.sync_retries || 0) + 1 }).eq('id', reqBody.id);
+              return jsonRes(200, { result: 'success' });
+          } catch (err) {
+              await dbClient.from('education_apply').update({ sync_status: 'failed', sync_error: err.message, sync_retries: (applyData.sync_retries || 0) + 1 }).eq('id', reqBody.id);
+              return jsonRes(500, { result: 'error', msg: err.message });
           }
         }
-
-        return jsonRes(200, { result: 'success' });
-      }
     } catch (err) {
       console.error('Database POST Error:', err);
       return jsonRes(500, { result: 'error', msg: err.message });
@@ -332,5 +321,6 @@ let reqBody = {}; if(event.body){try{reqBody=JSON.parse(event.body)}catch(e){req
 
   return jsonRes(405, { result: 'error', msg: 'Error' });
 }
+
 
 
