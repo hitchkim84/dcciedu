@@ -66,17 +66,17 @@ function userMessage(err) {
   return GENERIC_ERROR_MSG;
 }
 
+// Netlify functions run in UTC, so format explicitly in Korea time.
+const KST_PARTS = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+});
+
 function formatTimestamp(isoString) {
   if (!isoString) return "";
   try {
-    const d = new Date(isoString);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    const hh = String(d.getHours()).padStart(2, '0');
-    const min = String(d.getMinutes()).padStart(2, '0');
-    const ss = String(d.getSeconds()).padStart(2, '0');
-    return `${yyyy}. ${mm}. ${dd} ${hh}:${min}:${ss}`;
+    const p = Object.fromEntries(KST_PARTS.formatToParts(new Date(isoString)).map(x => [x.type, x.value]));
+    return `${p.year}. ${p.month}. ${p.day} ${p.hour}:${p.minute}:${p.second}`;
   } catch (e) {
     return String(isoString);
   }
