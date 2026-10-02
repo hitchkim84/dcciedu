@@ -25,7 +25,7 @@
         <div class="bg-white rounded-xl shadow-lg p-8">
             <div class="flex items-center justify-between mb-8 pb-4">
                 <h1 class="text-3xl font-bold text-gray-900">🎓 교육 과정 관리 (관리자)</h1>
-                <button onclick="logout()"
+                <button type="button" data-action="logout"
                     class="py-2 px-4 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-100 focus:outline-none transition-colors">
                     로그아웃
                 </button>
@@ -33,15 +33,15 @@
 
             <!-- 탭 네비게이션 -->
             <div class="flex border-b border-gray-200 mb-8">
-                <button onclick="switchTab('status')" id="tab-status"
+                <button type="button" data-action="switch-tab" data-tab="status" id="tab-status"
                     class="py-2 px-4 text-blue-600 border-b-2 border-blue-600 font-bold focus:outline-none transition-colors">
                     신청자 현황
                 </button>
-                <button onclick="switchTab('register')" id="tab-register"
+                <button type="button" data-action="switch-tab" data-tab="register" id="tab-register"
                     class="py-2 px-4 text-gray-500 font-medium hover:text-gray-700 focus:outline-none transition-colors">
                     교육 과정 등록
                 </button>
-                <button onclick="switchTab('manage')" id="tab-manage"
+                <button type="button" data-action="switch-tab" data-tab="manage" id="tab-manage"
                     class="py-2 px-4 text-gray-500 font-medium hover:text-gray-700 focus:outline-none transition-colors">
                     교육 과정 관리 (수정/삭제)
                 </button>
@@ -54,7 +54,7 @@
                         <h2 class="text-xl font-bold text-gray-800">📊 현재 접수중인 교육과정 현황</h2>
                         <p class="text-sm text-gray-500 mt-1">현재 접수 중이거나 마감 임박한 과정의 신청 현황을 실시간으로 확인합니다.</p>
                     </div>
-                    <button onclick="fetchStatus()"
+                    <button type="button" data-action="fetch-status"
                         class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-bold">
                         ↻ 새로고침
                     </button>
@@ -105,7 +105,7 @@
                                 </p>
                             </div>
                         </div>
-                        <button onclick="cancelEdit()"
+                        <button type="button" data-action="cancel-edit"
                             class="text-sm font-bold text-yellow-700 hover:text-yellow-900 underline">취소 (새 등록으로
                             전환)</button>
                     </div>
@@ -170,6 +170,13 @@
                             <input type="date" id="deadline" required
                                 class="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500">
                         </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">교육 종료일 (마지막 교육 날짜)</label>
+                        <input type="date" id="endDate" required
+                            class="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500">
+                        <p class="text-xs text-gray-500 mt-1">개인정보 파기 기준입니다. 종료일로부터 1년이 지나면 이 과정의 신청자 정보가 자동 삭제됩니다.</p>
                     </div>
 
                     <div>
@@ -238,7 +245,7 @@
                     </div>
 
                     <div class="pt-6 border-t flex justify-end">
-                        <button type="button" id="btn-submit" onclick="submitCourse()"
+                        <button type="button" id="btn-submit" data-action="submit-course"
                             class="px-8 py-3 bg-blue-900 text-white font-bold rounded-xl shadow hover:bg-blue-800 transition-colors transform hover:-translate-y-0.5">
                             과정 등록하기
                         </button>
@@ -254,7 +261,7 @@
                         <h2 class="text-xl font-bold text-gray-800">🛠️ 교육 과정 관리</h2>
                         <p class="text-sm text-gray-500 mt-1">등록된 교육 과정을 수정하거나 삭제할 수 있습니다.</p>
                     </div>
-                    <button onclick="fetchManage()"
+                    <button type="button" data-action="fetch-manage"
                         class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-bold">
                         ↻ 새로고침
                     </button>
@@ -300,7 +307,7 @@
                 <h2 class="text-2xl font-bold text-gray-900">관리자 로그인</h2>
                 <p id="login-desc" class="text-sm text-gray-500 mt-2">접근 권한을 확인하기 위해 이메일과 비밀번호를 입력해주세요.</p>
             </div>
-            <form id="login-form" onsubmit="event.preventDefault(); tryLogin();" class="space-y-4">
+            <form id="login-form" class="space-y-4">
                 <div>
                     <label for="login-email" class="block text-sm font-medium text-gray-700 mb-1">이메일</label>
                     <input type="email" id="login-email" required
@@ -320,7 +327,7 @@
             </form>
 
             <!-- 2단계 인증(OTP): 비밀번호 로그인 후 표시. 처음에는 등록(QR), 이후에는 6자리 코드 입력 -->
-            <form id="mfa-panel" class="hidden space-y-4" onsubmit="event.preventDefault(); verifyMfa();">
+            <form id="mfa-panel" class="hidden space-y-4">
                 <div id="mfa-enroll" class="hidden text-center space-y-3">
                     <p class="text-sm text-gray-700">휴대폰 인증 앱(Google Authenticator 등)으로 아래 QR 코드를 찍어 등록하세요.</p>
                     <img id="mfa-qr" alt="OTP 등록 QR 코드" class="mx-auto w-44 h-44 bg-white border rounded-lg">
@@ -336,664 +343,13 @@
                     class="w-full bg-blue-900 text-white font-bold py-3 px-4 rounded-xl hover:bg-blue-800 transition-colors shadow-lg">
                     확인
                 </button>
-                <button type="button" onclick="logout()" class="w-full text-sm text-gray-500 hover:text-gray-700">취소하고 로그아웃</button>
+                <button type="button" data-action="logout" class="w-full text-sm text-gray-500 hover:text-gray-700">취소하고 로그아웃</button>
             </form>
         </div>
     </div>
 
-    <script>
-        // ★★★ Netlify Functions 프록시 URL (netlify.toml에서 /api/* → 함수로 연결) ★★★
-        const scriptURL = '/api/proxy';
-
-        let supabaseClient;
-        let sessionToken = null; // JWT Access Token
-        let allCourses = {}; // 데이터 저장용
-        let statusCourses = []; // 신청자 현황 (명단 표/CSV용)
-        let editingCourseId = null; // 현재 수정 중인 ID
-
-        // Initialize Supabase and check session on load
-        async function initSupabase() {
-            try {
-                const res = await fetch('/api/config');
-                const config = await res.json();
-                if (!config.supabaseUrl || !config.supabaseKey) {
-                    throw new Error("Supabase configuration is missing on the server.");
-                }
-
-                supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
-
-                // Listen to auth state changes
-                // 콜백 안에서 Supabase 함수를 바로 부르면 멈출 수 있어 다음 차례로 미룬다.
-                supabaseClient.auth.onAuthStateChange((event, session) => {
-                    setTimeout(() => applySession(session), 0);
-                });
-
-                // Check current session
-                const { data: { session } } = await supabaseClient.auth.getSession();
-                applySession(session);
-
-            } catch (err) {
-                console.error("Initialization Error:", err);
-                alert("설정 로드 실패: " + err.message);
-            }
-        }
-
-        // 로그인 상태를 화면에 반영한다. 관리자 역할이 없는 계정은 바로 로그아웃시킨다.
-        // JWT 안의 정보(관리자 역할, 인증 단계 aal)를 읽는다. 검증은 서버와 DB가 다시 한다.
-        function jwtClaims(token) {
-            try {
-                const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-                return JSON.parse(atob(part + '='.repeat((4 - part.length % 4) % 4)));
-            } catch (e) {
-                return {};
-            }
-        }
-
-        let mfaFactorId = null; // 등록 또는 입력 중인 OTP 인증 수단 ID
-
-        function applySession(session) {
-            if (session && (session.user.app_metadata || {}).role !== 'admin') {
-                applySession(null);
-                alert('관리자 권한이 없는 계정입니다.');
-                supabaseClient.auth.signOut();
-                return;
-            }
-            // 비밀번호만 통과한 상태(aal1)면 명단을 보여주지 않고 OTP 단계로 보낸다.
-            if (session && jwtClaims(session.access_token).aal !== 'aal2') {
-                sessionToken = null;
-                document.getElementById('admin-content').classList.add('hidden');
-                document.getElementById('login-modal').classList.remove('hidden');
-                showMfa();
-                return;
-            }
-            hideMfa();
-            if (session) {
-                const isNew = sessionToken !== session.access_token;
-                sessionToken = session.access_token;
-                document.getElementById('login-modal').classList.add('hidden');
-                document.getElementById('admin-content').classList.remove('hidden');
-                if (isNew) fetchStatus();
-            } else {
-                sessionToken = null;
-                document.getElementById('login-modal').classList.remove('hidden');
-                document.getElementById('admin-content').classList.add('hidden');
-
-                // 보안: 로그아웃 시 개인정보 데이터 메모리 및 화면에서 삭제
-                document.getElementById('status-body').innerHTML = '';
-                document.getElementById('manage-body').innerHTML = '';
-                allCourses = {};
-                statusCourses = [];
-            }
-        }
-
-        window.onload = initSupabase;
-
-        function hideMfa() {
-            mfaFactorId = null;
-            document.getElementById('mfa-panel').classList.add('hidden');
-            document.getElementById('mfa-enroll').classList.add('hidden');
-            document.getElementById('mfa-qr').removeAttribute('src');
-            document.getElementById('mfa-secret').textContent = '';
-            document.getElementById('mfa-code').value = '';
-            document.getElementById('login-form').classList.remove('hidden');
-            document.getElementById('login-desc').textContent = '접근 권한을 확인하기 위해 이메일과 비밀번호를 입력해주세요.';
-        }
-
-        // OTP 단계: 등록된 인증 앱이 있으면 코드 입력, 없으면 QR 등록부터
-        let mfaLoading = false; // 같은 화면을 두 번 준비하지 않도록 (중복 등록 방지)
-        async function showMfa() {
-            if (mfaLoading || (!document.getElementById('mfa-panel').classList.contains('hidden') && mfaFactorId)) return;
-            mfaLoading = true;
-            document.getElementById('login-form').classList.add('hidden');
-            document.getElementById('mfa-panel').classList.remove('hidden');
-            try {
-                const { data, error } = await supabaseClient.auth.mfa.listFactors();
-                if (error) throw error;
-                const verified = data.totp || [];
-                if (verified.length > 0) {
-                    mfaFactorId = verified[0].id;
-                    document.getElementById('mfa-enroll').classList.add('hidden');
-                    document.getElementById('login-desc').textContent = '2단계 인증: 인증 앱에 표시된 6자리 코드를 입력해주세요.';
-                } else {
-                    // 끝내지 못한 이전 등록이 있으면 지우고 새로 등록한다.
-                    for (const f of (data.all || [])) {
-                        if (f.factor_type === 'totp' && f.status !== 'verified') {
-                            await supabaseClient.auth.mfa.unenroll({ factorId: f.id });
-                        }
-                    }
-                    const { data: enrolled, error: enrollError } = await supabaseClient.auth.mfa.enroll({ factorType: 'totp', friendlyName: '관리자 OTP' });
-                    if (enrollError) throw enrollError;
-                    mfaFactorId = enrolled.id;
-                    document.getElementById('mfa-qr').src = enrolled.totp.qr_code;
-                    document.getElementById('mfa-secret').textContent = enrolled.totp.secret;
-                    document.getElementById('mfa-enroll').classList.remove('hidden');
-                    document.getElementById('login-desc').textContent = '2단계 인증 등록: 처음 한 번만 하면 됩니다.';
-                }
-                document.getElementById('mfa-code').focus();
-            } catch (err) {
-                alert('2단계 인증을 준비하지 못했습니다: ' + err.message);
-                logout();
-            } finally {
-                mfaLoading = false;
-            }
-        }
-
-        async function verifyMfa() {
-            const codeInput = document.getElementById('mfa-code');
-            const code = codeInput.value.trim();
-            if (!/^[0-9]{6}$/.test(code) || !mfaFactorId) return alert('6자리 숫자를 입력해주세요.');
-            const btn = document.getElementById('mfa-submit');
-            btn.disabled = true;
-            try {
-                const { error } = await supabaseClient.auth.mfa.challengeAndVerify({ factorId: mfaFactorId, code });
-                if (error) throw error;
-                const { data: { session } } = await supabaseClient.auth.getSession();
-                applySession(session);
-            } catch (err) {
-                alert('코드가 맞지 않습니다. 인증 앱의 현재 코드를 다시 입력해주세요.');
-                codeInput.value = '';
-                codeInput.focus();
-            } finally {
-                btn.disabled = false;
-            }
-        }
-
-        // Login Handler
-        async function tryLogin() {
-            const emailInput = document.getElementById('login-email');
-            const pwdInput = document.getElementById('login-password');
-            const email = emailInput.value;
-            const password = pwdInput.value;
-
-            if (!email || !password) return alert('이메일과 비밀번호를 모두 입력해주세요.');
-
-            const btn = document.querySelector('button[onclick="tryLogin()"]') || document.querySelector('button[type="submit"]');
-            const originalText = btn.innerText;
-            btn.innerText = "로그인 중...";
-            btn.disabled = true;
-
-            try {
-                const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-                if (error) throw error;
-
-                // Success is handled by onAuthStateChange listener
-                emailInput.value = '';
-                pwdInput.value = '';
-            } catch (err) {
-                alert('로그인 실패: ' + err.message);
-                pwdInput.value = '';
-                pwdInput.focus();
-            } finally {
-                btn.innerText = originalText;
-                btn.disabled = false;
-            }
-        }
-
-        // Logout Handler
-        async function logout() {
-            if (supabaseClient) {
-                await supabaseClient.auth.signOut();
-            }
-        }
-
-        function switchTab(tabId) {
-            // 버튼 스타일 초기화
-            ['register', 'status', 'manage'].forEach(id => {
-                const btn = document.getElementById('tab-' + id);
-                if (btn) {
-                    btn.className = "py-2 px-4 text-gray-500 font-medium hover:text-gray-700 focus:outline-none transition-colors";
-                    btn.classList.remove('border-b-2', 'border-blue-600', 'text-blue-600', 'font-bold');
-                }
-                const section = document.getElementById('section-' + id);
-                if (section) section.classList.add('hidden');
-            });
-
-            // 선택된 탭 활성화
-            const activeHeader = document.getElementById('tab-' + tabId);
-            if (activeHeader) {
-                activeHeader.classList.remove('text-gray-500', 'font-medium');
-                activeHeader.classList.add('text-blue-600', 'border-b-2', 'border-blue-600', 'font-bold');
-            }
-
-            const activeSection = document.getElementById('section-' + tabId);
-            if (activeSection) activeSection.classList.remove('hidden');
-
-            if (tabId === 'status') fetchStatus();
-            if (tabId === 'manage') fetchManage();
-        }
-
-        // --- 기능 1: 과정 등록/수정 ---
-        function updateDateFromInputs() {
-            const day = document.getElementById('input-date-day').value;
-            const start = document.getElementById('input-date-start').value;
-            const end = document.getElementById('input-date-end').value;
-
-            if (!day || !start || !end) return false;
-
-            const dateObj = new Date(day);
-            const week = ['일', '월', '화', '수', '목', '금', '토'];
-            const dayOfWeek = week[dateObj.getDay()];
-            
-            // YYYY-MM-DD -> YYYY. M. D
-            const parts = day.split('-');
-            const formattedDate = `${parts[0]}. ${parseInt(parts[1])}. ${parseInt(parts[2])}(${dayOfWeek}) ${start}~${end}`;
-            document.getElementById('date').value = formattedDate;
-            return true;
-        }
-
-        function submitCourse() {
-            const btn = document.getElementById('btn-submit');
-            const originalText = btn.innerText;
-
-            if (!sessionToken) return alert('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
-
-            // 일시 통합 업데이트
-            if (!updateDateFromInputs()) {
-                return alert('교육 일시(날짜, 시작시간, 종료시간)를 모두 입력해주세요.');
-            }
-
-            const actionType = editingCourseId ? "수정" : "등록";
-            if (!confirm(`이대로 교육 과정을 ${actionType}하시겠습니까?`)) return;
-
-            btn.innerText = "처리 중...";
-            btn.disabled = true;
-
-            const formData = new FormData();
-            formData.append('action', editingCourseId ? 'update_course' : 'add_course');
-            if (editingCourseId) formData.append('id', editingCourseId);
-
-            // 데이터 매핑
-            ['category', 'title', 'date', 'place', 'capacity', 'deadline', 'target', 'goal', 'content', 'instructor', 'instructorBio', 'contact', 'cost', 'paymentInfo', 'otherInfo'].forEach(field => {
-                const el = document.getElementById(field);
-                if (el) formData.append(field, el.value);
-            });
-
-            const data = new URLSearchParams(formData);
-
-            fetch(scriptURL + '?type=admin', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Authorization': 'Bearer ' + sessionToken
-                },
-                body: data
-            })
-                .then(response => response.json())
-                .then(result => {
-                    if (result.result === 'success') {
-                        alert(`✅ 교육 과정이 성공적으로 ${actionType}되었습니다!`);
-                        if (editingCourseId) cancelEdit(); // 수정 모드 종료
-                        else {
-                            document.getElementById('courseForm').reset();
-                        }
-                    } else {
-                        alert(`⛔ ${actionType} 실패: ` + result.msg);
-                    }
-                    btn.innerText = originalText;
-                    btn.disabled = false;
-                })
-                .catch(error => {
-                    alert('서버 연결 실패: ' + error.message);
-                    console.error(error);
-                    btn.innerText = originalText;
-                    btn.disabled = false;
-                });
-        }
-
-        // --- 기능 2: 신청자 현황 조회 ---
-        function fetchStatus() {
-            const tbody = document.getElementById('status-body');
-            if (!sessionToken) return; // 로그인 전이면 중단
-
-            tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-10 text-center text-blue-600 font-bold"><span class="animate-pulse">데이터를 불러오는 중입니다...</span></td></tr>';
-
-            fetch(scriptURL + '?type=admin', {
-                method: 'GET',
-                headers: {
-                    'Authorization': 'Bearer ' + sessionToken
-                }
-            })
-                .then(response => response.json())
-                .then(data => renderStatusTable(data, tbody))
-                .catch(err => handleError(tbody, err));
-        }
-
-        // 신청 1건 삭제: 확인 창을 거친 뒤 서버에 요청 (OTP 통과 관리자만 가능)
-        function deleteApplication(btn) {
-            const id = btn.dataset.id;
-            if (!id) return;
-            if (!confirm(`이 신청을 삭제하시겠습니까?\n\n성명: ${btn.dataset.name}\n회사: ${btn.dataset.company}\n\n삭제 후에는 복구할 수 없습니다.`)) return;
-            btn.disabled = true;
-            fetch(scriptURL + '?type=admin', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Authorization': 'Bearer ' + sessionToken
-                },
-                body: new URLSearchParams({ action: 'delete_application', id })
-            })
-                .then(response => response.json())
-                .then(result => {
-                    if (result.result === 'success') {
-                        alert('🗑️ 삭제되었습니다.');
-                        fetchStatus();
-                    } else {
-                        alert('⛔ 삭제 실패: ' + result.msg);
-                        btn.disabled = false;
-                    }
-                })
-                .catch(err => { alert('오류 발생: ' + err); btn.disabled = false; });
-        }
-
-        // 신청자/과정 입력값을 화면에 넣을 때는 반드시 이 함수로 감싼다 (HTML 주입 방지)
-        function escapeHtml(value) {
-            return String(value === undefined || value === null ? '' : value)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        }
-
-        const APPLICANT_COLUMNS = [
-            ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['dept', '부서'],
-            ['position', '직위'], ['name', '성명'], ['phone', '연락처'], ['email', '이메일'], ['privacy', '개인정보동의']
-        ];
-
-        function sortedApplicants(item) {
-            return (item.applicants || []).slice().sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
-        }
-
-        function renderApplicantsTable(item, idx) {
-            const apps = sortedApplicants(item);
-            if (apps.length === 0) {
-                return '<p class="text-sm text-gray-500 py-2">신청자가 없습니다.</p>';
-            }
-            const head = APPLICANT_COLUMNS.map(([, label]) =>
-                `<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">${label}</th>`).join('')
-                + '<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">관리</th>';
-            const rows = apps.map((app, i) => `
-                <tr class="border-t">
-                    <td class="px-3 py-2 text-xs text-gray-500">${i + 1}</td>
-                    ${APPLICANT_COLUMNS.map(([key]) => `<td class="px-3 py-2 text-sm text-gray-800">${escapeHtml(app[key])}</td>`).join('')}
-                    <td class="px-3 py-2"><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
-                        onclick="deleteApplication(this)" class="px-2 py-1 text-xs font-bold text-red-600 border border-red-300 rounded hover:bg-red-50">삭제</button></td>
-                </tr>`).join('');
-            return `
-                <div class="flex justify-between items-center mb-2">
-                    <span class="text-sm font-bold text-gray-700">신청자 명단 (${apps.length}명)</span>
-                    <button type="button" onclick="downloadApplicantsCsv(${idx})"
-                        class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-bold">엑셀(CSV) 다운로드</button>
-                </div>
-                <div class="overflow-x-auto bg-white border rounded-lg">
-                    <table class="min-w-full whitespace-nowrap">
-                        <thead class="bg-gray-50"><tr><th class="px-3 py-2 text-left text-xs font-bold text-gray-500">No</th>${head}</tr></thead>
-                        <tbody>${rows}</tbody>
-                    </table>
-                </div>`;
-        }
-
-        function toggleApplicants(idx) {
-            const row = document.getElementById('applicants-row-' + idx);
-            const arrow = document.getElementById('applicants-arrow-' + idx);
-            if (!row) return;
-            const willOpen = row.classList.contains('hidden');
-            row.classList.toggle('hidden', !willOpen);
-            if (arrow) arrow.textContent = willOpen ? '▼' : '▶';
-        }
-
-        // 엑셀 수식으로 해석될 수 있는 값(=, +, -, @ 시작)은 앞에 '를 붙여 글자로 저장
-        function csvCell(value) {
-            let s = String(value === undefined || value === null ? '' : value);
-            if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
-            return '"' + s.replace(/"/g, '""') + '"';
-        }
-
-        function downloadApplicantsCsv(idx) {
-            const item = statusCourses[idx];
-            if (!item) return;
-            const apps = sortedApplicants(item);
-            const lines = [
-                ['No', ...APPLICANT_COLUMNS.map(([, label]) => label)].map(csvCell).join(','),
-                ...apps.map((app, i) => [i + 1, ...APPLICANT_COLUMNS.map(([key]) => app[key])].map(csvCell).join(','))
-            ];
-            const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            const safeTitle = String(item.title || '과정').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60);
-            a.href = url;
-            a.download = `${safeTitle}_신청자명단.csv`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-        }
-
-        function renderStatusTable(data, tbody) {
-            tbody.innerHTML = '';
-            statusCourses = [];
-            if (data.result === 'error') {
-                tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-10 text-center text-red-500 font-bold">오류: ${escapeHtml(data.msg)}</td></tr>`;
-                return;
-            }
-
-            const now = new Date();
-
-            // 1. 날짜순 정렬 (오름차순)
-            const courses = Object.keys(data).map(key => data[key]).sort((a, b) => {
-                const parseDate = (str) => {
-                    try {
-                        const parts = str.match(/(\d{4})[\.\s]+(\d{1,2})[\.\s]+(\d{1,2})/);
-                        if (parts) return new Date(`${parts[1]}-${parts[2]}-${parts[3]}`);
-                        return new Date(9999, 11, 31); // 파싱 실패시 뒤로
-                    } catch (e) { return new Date(9999, 11, 31); }
-                };
-                return parseDate(a.date) - parseDate(b.date);
-            });
-
-            if (courses.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-10 text-center text-gray-500">데이터가 없습니다.</td></tr>';
-                return;
-            }
-
-            statusCourses = courses;
-            let html = '';
-            courses.forEach((item, idx) => {
-                let statusBadge = `<span class="px-2 py-1 bg-green-100 text-green-800 text-xs font-bold rounded-full">접수중</span>`;
-                const cap = parseInt(item.capacity || 0);
-                const cur = parseInt(item.current || 0);
-
-                if (cap > 0 && cur >= cap) statusBadge = `<span class="px-2 py-1 bg-gray-100 text-gray-500 text-xs font-bold rounded-full">정원마감</span>`;
-
-                if (item.deadline) {
-                    const deadlineDate = new Date(item.deadline);
-                    deadlineDate.setHours(23, 59, 59, 999);
-                    if (now > deadlineDate) statusBadge = `<span class="px-2 py-1 bg-gray-100 text-gray-500 text-xs font-bold rounded-full">기한마감</span>`;
-                }
-
-                html += `
-                    <tr class="hover:bg-blue-50 border-b">
-                        <td class="px-6 py-4">${statusBadge}</td>
-                        <td class="px-6 py-4">
-                            <button type="button" onclick="toggleApplicants(${idx})"
-                                class="text-sm font-bold text-gray-900 flex items-center text-left hover:text-blue-700 hover:underline focus:outline-none">
-                                <span id="applicants-arrow-${idx}" class="text-xs text-gray-400 mr-2">▶</span>${escapeHtml(item.title)}
-                            </button>
-                            <div class="text-xs text-gray-500 ml-5">${escapeHtml(item.category)}</div>
-                        </td>
-                        <td class="px-6 py-4 text-gray-500 text-sm">${escapeHtml(item.date)}</td>
-                        <td class="px-6 py-4">
-                            <div class="flex items-center">
-                                <div class="w-full bg-gray-200 rounded-full h-2.5 mr-2 max-w-[100px]">
-                                    <div class="bg-blue-600 h-2.5 rounded-full" style="width: ${cap > 0 ? Math.min((cur / cap) * 100, 100) : 0}%"></div>
-                                </div>
-                                <span class="text-sm font-bold text-gray-700">${cur} / ${cap > 0 ? cap : '-'}명</span>
-                            </div>
-                        </td>
-                        <td class="px-6 py-4 text-gray-500 text-sm">${item.deadline ? escapeHtml(String(item.deadline).split('T')[0]) : '상시/별도'}</td>
-                    </tr>
-                    <tr id="applicants-row-${idx}" class="hidden bg-gray-50 border-b">
-                        <td colspan="5" class="px-6 py-4">${renderApplicantsTable(item, idx)}</td>
-                    </tr>`;
-            });
-            tbody.innerHTML = html;
-        }
-
-        // --- 기능 3: 관리 (수정/삭제) ---
-        function fetchManage() {
-            const tbody = document.getElementById('manage-body');
-            if (!sessionToken) return;
-
-            tbody.innerHTML = '<tr><td colspan="3" class="px-6 py-10 text-center text-blue-600 font-bold"><span class="animate-pulse">데이터를 불러오는 중입니다...</span></td></tr>';
-
-            fetch(scriptURL + '?type=admin', {
-                method: 'GET',
-                headers: {
-                    'Authorization': 'Bearer ' + sessionToken
-                }
-            })
-                .then(response => response.json())
-                .then(data => {
-                    allCourses = data; // 데이터 전역 저장
-                    renderManageTable(data, tbody);
-                })
-                .catch(err => {
-                    console.error("Error fetching for manage:", err);
-                    tbody.innerHTML = '<tr><td colspan="3" class="px-6 py-10 text-center text-red-500">데이터 불러오기 실패</td></tr>';
-                    alert('데이터 불러오기 실패: ' + err.message);
-                });
-        }
-
-        function renderManageTable(data, tbody) {
-            tbody.innerHTML = '';
-            const courses = Object.keys(data).map(key => data[key]);
-
-            if (courses.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="3" class="px-6 py-10 text-center text-gray-500">데이터가 없습니다.</td></tr>';
-                return;
-            }
-
-            courses.forEach(item => {
-                tbody.innerHTML += `
-                    <tr class="hover:bg-gray-50">
-                        <td class="px-6 py-4">
-                            <div class="text-sm font-bold text-gray-900">${escapeHtml(item.title)}</div>
-                            <div class="text-xs text-gray-500">${escapeHtml(item.category)}</div>
-                        </td>
-                        <td class="px-6 py-4 text-gray-500 text-sm">${escapeHtml(item.date)}</td>
-                        <td class="px-6 py-4 text-center whitespace-nowrap">
-                            <button onclick="loadCourseForEdit('${item.id}')" class="text-blue-600 hover:text-blue-900 font-bold mr-2 border border-blue-200 px-3 py-1 rounded hover:bg-blue-50 transition-colors">수정</button>
-                            <button onclick="deleteCourse('${item.id}')" class="text-red-600 hover:text-red-900 font-bold border border-red-200 px-3 py-1 rounded hover:bg-red-50 transition-colors">삭제</button>
-                        </td>
-                    </tr>`;
-            });
-        }
-
-        // 수정 모드 진입
-        function loadCourseForEdit(id) {
-            const data = allCourses[id];
-            if (!data) return alert('정보를 찾을 수 없습니다.');
-
-            editingCourseId = id;
-
-            // 탭 전환
-            switchTab('register');
-
-            // 폼 채우기
-            document.getElementById('category').value = data.category;
-            document.getElementById('title').value = data.title;
-            document.getElementById('date').value = data.date;
-            document.getElementById('place').value = data.place;
-            document.getElementById('capacity').value = data.capacity;
-            document.getElementById('deadline').value = data.deadline ? data.deadline.split('T')[0] : '';
-            document.getElementById('target').value = data.target;
-            document.getElementById('goal').value = data.goal;
-            document.getElementById('content').value = data.content;
-            document.getElementById('instructor').value = data.instructor;
-              if(document.getElementById('instructorBio')) document.getElementById('instructorBio').value = data.instructorBio || '';
-            document.getElementById('contact').value = data.contact;
-            document.getElementById('cost').value = data.cost || '';
-            document.getElementById('paymentInfo').value = data.paymentInfo;
-            document.getElementById('otherInfo').value = data.otherInfo;
-
-            // 일시(date) 필드 파싱해서 개별 입력란에 채우기
-            try {
-                const dateText = data.date;
-                const datePart = dateText.match(/(\d{4})[\.\s]+(\d{1,2})[\.\s]+(\d{1,2})/);
-                const timePart = dateText.match(/(\d{2}:\d{2})~(\d{2}:\d{2})/);
-                
-                if (datePart) {
-                    const y = datePart[1];
-                    const m = datePart[2].padStart(2, '0');
-                    const d = datePart[3].padStart(2, '0');
-                    document.getElementById('input-date-day').value = `${y}-${m}-${d}`;
-                }
-                if (timePart) {
-                    document.getElementById('input-date-start').value = timePart[1];
-                    document.getElementById('input-date-end').value = timePart[2];
-                }
-            } catch (e) {
-                console.error("일시 파싱 실패:", e);
-            }
-
-            // UI 변경
-            document.getElementById('edit-header').classList.remove('hidden');
-            document.getElementById('edit-course-title').innerText = data.title;
-            document.getElementById('btn-submit').innerText = '교육 과정 수정하기';
-            document.getElementById('btn-submit').classList.remove('bg-blue-900', 'hover:bg-blue-800');
-            document.getElementById('btn-submit').classList.add('bg-yellow-600', 'hover:bg-yellow-500');
-
-            window.scrollTo(0, 0);
-        }
-
-        // 수정 취소
-        function cancelEdit() {
-            editingCourseId = null;
-            document.getElementById('courseForm').reset();
-            document.getElementById('edit-header').classList.add('hidden');
-
-            const btn = document.getElementById('btn-submit');
-            btn.innerText = '교육 과정 등록하기';
-            btn.classList.remove('bg-yellow-600', 'hover:bg-yellow-500');
-            btn.classList.add('bg-blue-900', 'hover:bg-blue-800');
-        }
-
-        // 삭제
-        function deleteCourse(id) {
-            if (!sessionToken) return alert('로그인이 필요합니다.');
-
-            if (!confirm("정말로 이 과정을 삭제하시겠습니까?\n삭제 후에는 복구할 수 없습니다.")) return;
-
-            const formData = new FormData();
-            formData.append('action', 'delete_course');
-            formData.append('id', id);
-
-            fetch(scriptURL + '?type=admin', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Authorization': 'Bearer ' + sessionToken
-                },
-                body: new URLSearchParams(formData)
-            })
-                .then(response => response.json())
-                .then(result => {
-                    if (result.result === 'success') {
-                        alert('🗑️ 삭제되었습니다.');
-                        fetchManage(); // 목록 갱신
-                    } else {
-                        alert('⛔ 삭제 실패: ' + result.msg);
-                    }
-                })
-                .catch(err => alert('오류 발생: ' + err));
-        }
-
-        function handleError(tbody, err) {
-            console.error(err);
-            tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-10 text-center text-red-500">데이터 로드 실패</td></tr>`;
-        }
-
-    </script>
+    <!-- 동작 코드는 admin.js 한 파일에 둔다(CSP로 페이지 안 인라인 스크립트 실행을 막기 위해) -->
+    <script src="/admin.js"></script>
 </body>
 
 </html>

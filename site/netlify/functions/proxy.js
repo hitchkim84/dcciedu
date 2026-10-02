@@ -35,6 +35,7 @@ const CORS_HEADERS = {
 const GENERIC_ERROR_MSG = '처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // 입력값 최대 길이 (DB 함수 sql/06_apply_validation.sql과 같은 기준)
 const MAX_LEN = { name: 50, company: 100, email: 100, phone: 20, bizNo: 20, dept: 50, position: 50 };
 
@@ -114,6 +115,7 @@ function mapCourse(course, current) {
     place: course.place || "",
     capacity: course.capacity || 0,
     deadline: course.deadline || "",
+    endDate: course.end_date || "",
     target: course.target || "",
     goal: course.goal || "",
     content: course.content || "",
@@ -145,37 +147,61 @@ async function fetchPublicCourses() {
   return data.map(c => mapCourse(c, 0));
 }
 
-// 로봇 확인(Cloudflare Turnstile). TURNSTILE_SECRET이 없으면 확인하지 않는다(키 등록 전에도 신청이 멈추지 않게).
+// 로봇 확인(Cloudflare Turnstile). 결과: 'ok' | 'fail'(로봇·위조 토큰) | 'unavailable'(Cloudflare 장애) | 'misconfigured'(키 없음)
 // Cloudflare로는 확인 토큰과 접속 IP만 보내고 신청 내용(개인정보)은 보내지 않는다.
-// Cloudflare 장애로 확인 자체를 못 하면 신청은 받는다(접수 중단 방지). 확인 결과가 '실패'면 거절한다.
+// 키가 없거나 Cloudflare에 연결되지 않으면 신청을 받지 않는다(확인 없이 통과시키지 않음).
+//   키 없이 운영해야 하는 비상시에만 Netlify 환경변수 TURNSTILE_DISABLED=true로 확인을 끈다.
+// 토큰이 우리 사이트(TURNSTILE_HOSTNAMES, 기본 dcciedu.co.kr)의 신청 화면(action=apply)에서 발급된 것인지도 확인한다.
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+const TURNSTILE_ACTION = 'apply';
 async function verifyCaptcha(token, ip) {
   const secret = process.env.TURNSTILE_SECRET;
-  if (!secret) return true;
-  if (!token) return false;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
-  try {
-    const params = { secret, response: token };
-    if (ip) params.remoteip = ip;
-    const res = await fetch(TURNSTILE_VERIFY_URL, { method: 'POST', body: new URLSearchParams(params), signal: controller.signal });
-    const json = await res.json();
-    return json.success === true;
-  } catch (e) {
-    console.error('Turnstile verify unavailable, accepting application:', e.message);
-    return true;
-  } finally {
-    clearTimeout(timer);
+  if (!secret) {
+    if (process.env.TURNSTILE_DISABLED === 'true') return 'ok';
+    console.error('TURNSTILE_SECRET is not set: rejecting application (set TURNSTILE_DISABLED=true only in an emergency)');
+    return 'misconfigured';
   }
+  if (!token || token.length > 2048) return 'fail';
+  const hostnames = (process.env.TURNSTILE_HOSTNAMES || 'dcciedu.co.kr,www.dcciedu.co.kr').split(',').map(h => h.trim()).filter(Boolean);
+  // 일시적인 연결 오류에 대비해 한 번 더 시도한다(각 3초, 함수 제한 시간 10초 안에 끝나도록).
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    try {
+      const params = { secret, response: token };
+      if (ip) params.remoteip = ip;
+      const res = await fetch(TURNSTILE_VERIFY_URL, { method: 'POST', body: new URLSearchParams(params), signal: controller.signal });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      if (json.success !== true) return 'fail';
+      if (!hostnames.includes(json.hostname) || json.action !== TURNSTILE_ACTION) {
+        console.warn('Turnstile token from unexpected hostname/action:', json.hostname, json.action);
+        return 'fail';
+      }
+      return 'ok';
+    } catch (e) {
+      console.error(`Turnstile verify unavailable (attempt ${attempt}):`, e.message);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return 'unavailable';
 }
+
+const CAPTCHA_MSG = {
+  fail: '자동입력 방지 확인에 실패했습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.',
+  unavailable: '자동입력 방지 확인 서비스에 일시적으로 연결할 수 없습니다. 잠시 후 다시 시도해주세요.',
+  misconfigured: '신청 접수 설정에 문제가 있습니다. 교육센터로 연락해주세요.'
+};
 
 async function handleApply(reqBody, clientIp) {
   // 사람 눈에 보이지 않는 칸(허니팟)이 채워져 있으면 자동 입력 로봇으로 본다.
   if (str(reqBody.website)) {
     return jsonRes(400, { result: 'error', msg: '요청을 처리할 수 없습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.' });
   }
-  if (!(await verifyCaptcha(str(reqBody.captcha), clientIp))) {
-    return jsonRes(400, { result: 'error', msg: '자동입력 방지 확인에 실패했습니다. 잠시 후 다시 시도해주세요.' });
+  const captcha = await verifyCaptcha(str(reqBody.captcha), clientIp);
+  if (captcha !== 'ok') {
+    return jsonRes(captcha === 'fail' ? 400 : 503, { result: 'error', msg: CAPTCHA_MSG[captcha] });
   }
 
   const name = str(reqBody.name);
@@ -242,7 +268,9 @@ async function handleApply(reqBody, clientIp) {
 }
 
 // 신청자 본인 확인: 이름 + 휴대폰 + 이메일이 모두 일치하는 신청의 과정명·교육일시·신청일시만 돌려준다.
-// 반복 조회 제한과 일치 확인은 DB 함수(sql/08_lookup_applications.sql)에서 한다.
+// 반복 조회 제한과 일치 확인은 DB 함수(sql/12_security_hardening.sql)에서 한다.
+// 이름·휴대폰·이메일 일치는 본인 인증이 아니다(셋을 아는 사람은 조회 가능). 그래서 개인정보는 돌려주지 않는다.
+// 서비스 키가 있으면 서버 전용 키로 호출한다(sql/13 적용 후에는 홈페이지 키로 직접 호출 불가).
 async function handleLookup(reqBody) {
   const name = str(reqBody.name);
   const phone = str(reqBody.phone);
@@ -262,7 +290,7 @@ async function handleLookup(reqBody) {
     return jsonRes(400, { result: 'error', msg: '이메일 주소를 정확히 입력해주세요.' });
   }
 
-  const { data, error } = await supabase.rpc('lookup_my_applications', { p_name: name, p_phone: phone, p_email: email });
+  const { data, error } = await (adminDbClient || supabase).rpc('lookup_my_applications', { p_name: name, p_phone: phone, p_email: email });
   if (error) {
     console.error('lookup_my_applications failed:', error);
     const status = error.code === 'P0001' ? 429 : 500;
@@ -270,6 +298,14 @@ async function handleLookup(reqBody) {
   }
   const items = (data || []).map(r => ({ courseTitle: r.course_title || '', courseDate: r.course_date || '', appliedAt: r.applied_at || '' }));
   return jsonRes(200, { result: 'success', items });
+}
+
+// 과정 입력값 확인. 교육 종료일은 개인정보 파기 기준(종료일 + 1년)이라 반드시 받는다.
+function validateCourse(reqBody) {
+  if (!str(reqBody.title)) return '과정명을 입력해주세요.';
+  if (!DATE_RE.test(str(reqBody.endDate))) return '교육 종료일을 입력해주세요. (개인정보 파기 기준)';
+  if (str(reqBody.deadline) && !DATE_RE.test(str(reqBody.deadline))) return '신청 마감일 형식이 올바르지 않습니다.';
+  return null;
 }
 
 function courseFields(reqBody) {
@@ -280,6 +316,7 @@ function courseFields(reqBody) {
     place: reqBody.place,
     capacity: parseInt(reqBody.capacity) || 0,
     deadline: reqBody.deadline || null,
+    end_date: str(reqBody.endDate),
     target: reqBody.target,
     goal: reqBody.goal,
     content: reqBody.content,
@@ -290,6 +327,8 @@ function courseFields(reqBody) {
     other_info: reqBody.otherInfo
   };
 }
+
+const COURSE_HAS_APPLICANTS_MSG = '신청자가 있는 과정은 삭제할 수 없습니다. 신청자 명단을 먼저 정리해주세요.';
 
 exports.handler = async function(event, context) {
   // OPTIONS: Always Allow (CORS)
@@ -406,6 +445,13 @@ exports.handler = async function(event, context) {
         return jsonRes(403, { result: 'error', msg: '권한이 없습니다.' });
       }
 
+      if ((action === 'add_course' || action === 'update_course') && validateCourse(reqBody)) {
+        return jsonRes(400, { result: 'error', msg: validateCourse(reqBody) });
+      }
+      if ((action === 'update_course' || action === 'delete_course') && !UUID_RE.test(str(reqBody.id))) {
+        return jsonRes(400, { result: 'error', msg: '잘못된 요청입니다.' });
+      }
+
       // 1. Add course
       if (action === 'add_course') {
         const { data, error } = await dbClient
@@ -445,14 +491,23 @@ exports.handler = async function(event, context) {
         return jsonRes(200, { result: 'success' });
       }
 
-      // 3. Delete course
+      // 3. Delete course (신청자가 있으면 거절. DB도 sql/12의 ON DELETE RESTRICT로 한 번 더 막는다)
       else if (action === 'delete_course') {
+        const { data: apps, error: appsError } = await dbClient
+          .from('education_apply')
+          .select('id')
+          .eq('course_id', reqBody.id)
+          .limit(1);
+        if (appsError) throw appsError;
+        if (apps && apps.length > 0) return jsonRes(409, { result: 'error', msg: COURSE_HAS_APPLICANTS_MSG });
+
         const { data, error } = await dbClient
           .from('courses')
           .delete()
           .eq('id', reqBody.id)
           .select('id');
 
+        if (error && error.code === '23503') return jsonRes(409, { result: 'error', msg: COURSE_HAS_APPLICANTS_MSG });
         if (error) throw error;
         if (!data || data.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 과정을 찾을 수 없습니다.' });
         return jsonRes(200, { result: 'success' });
