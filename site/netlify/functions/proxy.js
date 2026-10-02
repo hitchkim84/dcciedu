@@ -329,6 +329,7 @@ exports.handler = async function(event, context) {
         const responseData = {};
         courses.forEach(course => {
           const apps = (course.education_apply || []).map(app => ({
+            id: app.id,
             timestamp: formatTimestamp(app.created_at),
             bizName: app.company || "",
             bizNo: app.biz_no || "",
@@ -380,6 +381,21 @@ exports.handler = async function(event, context) {
 
         if (error) throw error;
         return jsonRes(200, { result: 'success', id: data[0].id });
+      }
+
+      // 신청 1건 삭제 (OTP 통과 관리자만, DB 규칙 sql/09에서도 확인)
+      else if (action === 'delete_application') {
+        const id = str(reqBody.id);
+        if (!UUID_RE.test(id)) return jsonRes(400, { result: 'error', msg: '잘못된 요청입니다.' });
+        const { data, error } = await dbClient
+          .from('education_apply')
+          .delete()
+          .eq('id', id)
+          .select('id');
+
+        if (error) throw error;
+        if (!data || data.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 신청을 찾을 수 없습니다.' });
+        return jsonRes(200, { result: 'success' });
       }
 
       // 2. Update course
