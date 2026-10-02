@@ -145,7 +145,39 @@ async function fetchPublicCourses() {
   return data.map(c => mapCourse(c, 0));
 }
 
-async function handleApply(reqBody) {
+// 로봇 확인(Cloudflare Turnstile). TURNSTILE_SECRET이 없으면 확인하지 않는다(키 등록 전에도 신청이 멈추지 않게).
+// Cloudflare로는 확인 토큰과 접속 IP만 보내고 신청 내용(개인정보)은 보내지 않는다.
+// Cloudflare 장애로 확인 자체를 못 하면 신청은 받는다(접수 중단 방지). 확인 결과가 '실패'면 거절한다.
+const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+async function verifyCaptcha(token, ip) {
+  const secret = process.env.TURNSTILE_SECRET;
+  if (!secret) return true;
+  if (!token) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const params = { secret, response: token };
+    if (ip) params.remoteip = ip;
+    const res = await fetch(TURNSTILE_VERIFY_URL, { method: 'POST', body: new URLSearchParams(params), signal: controller.signal });
+    const json = await res.json();
+    return json.success === true;
+  } catch (e) {
+    console.error('Turnstile verify unavailable, accepting application:', e.message);
+    return true;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function handleApply(reqBody, clientIp) {
+  // 사람 눈에 보이지 않는 칸(허니팟)이 채워져 있으면 자동 입력 로봇으로 본다.
+  if (str(reqBody.website)) {
+    return jsonRes(400, { result: 'error', msg: '요청을 처리할 수 없습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.' });
+  }
+  if (!(await verifyCaptcha(str(reqBody.captcha), clientIp))) {
+    return jsonRes(400, { result: 'error', msg: '자동입력 방지 확인에 실패했습니다. 잠시 후 다시 시도해주세요.' });
+  }
+
   const name = str(reqBody.name);
   const company = str(reqBody.bizName);
   const email = str(reqBody.email);
@@ -192,7 +224,8 @@ async function handleApply(reqBody) {
   const req_id = crypto.createHash('sha256').update(`${phoneDigits}|${course.id}|${name}`).digest('hex');
 
   // 신청 조회 기능은 사용하지 않으므로 조회용 ID·비밀번호는 저장하지 않는다.
-  const { error: applyError } = await supabase.rpc('atomic_course_apply', {
+  // 서비스 키가 있으면 서버 전용 키로 호출한다(sql/10 적용 후에는 홈페이지 키로 직접 호출 불가).
+  const { error: applyError } = await (adminDbClient || supabase).rpc('atomic_course_apply', {
     p_course_id: course.id, p_req_id: req_id,
     p_company: company, p_biz_no: bizNo, p_dept: dept,
     p_position: position, p_name: name, p_phone: phone,
@@ -365,7 +398,8 @@ exports.handler = async function(event, context) {
       }
 
       if (action === 'apply') {
-        return await handleApply(reqBody);
+        const headers = event.headers || {};
+        return await handleApply(reqBody, headers['x-nf-client-connection-ip'] || '');
       }
 
       if (isPublic) {

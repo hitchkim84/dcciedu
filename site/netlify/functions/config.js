@@ -17,6 +17,7 @@ exports.handler = async function(event, context) {
     supabaseUrl: process.env.SUPABASE_URL || "",
     supabaseKey: process.env.SUPABASE_KEY || "", // anon key only
     naverClientId: process.env.NAVER_CLIENT_ID || "",
+    turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || "", // 공개용 사이트 키 (비밀키 아님)
     hasClient: typeof createClient === 'function'
   };
 
