@@ -79,6 +79,8 @@ before_issues=$(grep -c '확인 필요' "$TMP/check.txt" || true)
 run_sql sql/12_security_hardening.sql
 run_sql sql/12_security_hardening.sql
 run_sql sql/13_lookup_server_only.sql
+run_sql sql/14_staff_role_access_log.sql
+run_sql sql/14_staff_role_access_log.sql
 
 echo "[적용 후] check_security.sql 판정 (종료일 미입력만 남아야 함)"
 check_report

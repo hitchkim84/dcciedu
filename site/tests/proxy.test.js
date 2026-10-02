@@ -21,7 +21,8 @@ function resetDb() {
     ],
     education_apply: [
       { id: 'a-full', course_id: FULL_ID, req_id: 'x', name: '기존', company: 'A', email: 'a@a', phone: '010', agree_privacy: true, sync_status: 'success' }
-    ]
+    ],
+    admin_access_log: []
   };
   outboundCalls = [];
   outboundBodies = [];
@@ -42,21 +43,27 @@ function claimsOf(token) {
 const ADMIN_TOKEN = fakeJwt({ who: 'admin', aal: 'aal2' });
 const ADMIN_AAL1_TOKEN = fakeJwt({ who: 'admin', aal: 'aal1' });
 const USER_TOKEN = fakeJwt({ who: 'user', aal: 'aal2' });
+const STAFF_TOKEN = fakeJwt({ who: 'staff', aal: 'aal2' });
+const STAFF_AAL1_TOKEN = fakeJwt({ who: 'staff', aal: 'aal1' });
 
 function roleOf(client) {
   if (client.key === 'service') return 'service';
   const auth = client.headers.Authorization || '';
   const who = claimsOf(auth.replace('Bearer ', '')).who;
   if (who === 'admin') return 'admin';
+  if (who === 'staff') return 'staff';
   if (who === 'user') return 'authenticated';
   return 'anon';
 }
 
+// sql/12·14 흉내: 명단 조회는 슈퍼관리자·일반관리자, 쓰기는 슈퍼관리자만, 접속 기록은 서버 키만
 function canRead(role, table) {
   if (table === 'courses' || table === 'public_courses') return true;
-  return role === 'admin' || role === 'service';
+  if (table === 'admin_access_log') return role === 'service';
+  return role === 'admin' || role === 'staff' || role === 'service';
 }
 function canWrite(role, table) {
+  if (table === 'admin_access_log') return role === 'service';
   return role === 'admin' || role === 'service';
 }
 
@@ -69,13 +76,14 @@ function makeQuery(client, table) {
     update(fields) { q.op = 'update'; q.fields = fields; return api; },
     delete() { q.op = 'delete'; return api; },
     eq(k, v) { q.filters.push([k, v]); return api; },
+    in(k, vs) { q.filters.push([k, vs, 'in']); return api; },
     order() { return api; },
     limit(n) { q.lim = n; return api; },
     single() { q.single = 'single'; return api; },
     maybeSingle() { q.single = 'maybe'; return api; },
     then(resolve, reject) { return Promise.resolve(run()).then(resolve, reject); }
   };
-  const match = row => q.filters.every(([k, v]) => row[k] === v);
+  const match = row => q.filters.every(([k, v, op]) => (op === 'in' ? v.includes(row[k]) : row[k] === v));
 
   function embed(row) {
     const out = { ...row };
@@ -177,6 +185,7 @@ function createClient(url, key, opts = {}) {
       const who = claimsOf(token).who;
       if (who === 'admin') return { data: { user: { id: 'u1', app_metadata: { role: 'admin' } } }, error: null };
       if (who === 'user') return { data: { user: { id: 'u2', app_metadata: {} } }, error: null };
+      if (who === 'staff') return { data: { user: { id: 'u3', email: 'staff1@staff.dcciedu.co.kr', app_metadata: { role: 'staff' } } }, error: null };
       return { data: { user: null }, error: { message: 'invalid token' } };
     }
   };
@@ -652,4 +661,85 @@ test('courses expose the end date to the admin page', async () => {
   const handler = loadHandler();
   const res = await call(handler, { type: 'admin', token: ADMIN_TOKEN });
   assert.strictEqual(res.json[COURSE_ID].endDate, '2026-11-30');
+});
+
+// ---- 관리자 등급 (sql/14): 슈퍼관리자(admin) / 일반관리자(staff) ---------------
+const A = (o) => new URLSearchParams(o).toString();
+const IDS = ['55555555-5555-4555-8555-555555555551', '55555555-5555-4555-8555-555555555552', '55555555-5555-4555-8555-555555555553'];
+function seedApps() {
+  IDS.forEach((id, i) => db.education_apply.push({ id, course_id: COURSE_ID, req_id: 'r' + i, name: '시험' + i, company: 'C', email: 'e@e', phone: '010', agree_privacy: true }));
+}
+
+test('staff can view the applicant list without OTP; super admin still needs OTP', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const ok = await call(handler, { type: 'admin', token: STAFF_AAL1_TOKEN });
+  assert.strictEqual(ok.statusCode, 200, ok.body);
+  assert.strictEqual(ok.json[FULL_ID].applicants.length, 1);
+  const admin1 = await call(handler, { type: 'admin', token: ADMIN_AAL1_TOKEN });
+  assert.strictEqual(admin1.statusCode, 403);
+  const del = await call(handler, { method: 'POST', type: 'admin', token: STAFF_AAL1_TOKEN, body: A({ action: 'delete_application', id: 'a-full' }) });
+  assert.strictEqual(del.statusCode, 403);
+});
+
+test('staff cannot change anything (courses, deletes, bulk delete)', async () => {
+  seedApps();
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const tries = [
+    { action: 'add_course', title: 'X', endDate: '2026-12-31' },
+    { action: 'update_course', id: COURSE_ID, title: 'X', endDate: '2026-12-31' },
+    { action: 'delete_course', id: '44444444-4444-4444-8444-444444444444' },
+    { action: 'delete_application', id: IDS[0] },
+    { action: 'delete_applications', ids: IDS.join(',') }
+  ];
+  for (const t of tries) {
+    const res = await call(handler, { method: 'POST', type: 'admin', token: STAFF_TOKEN, body: A(t) });
+    assert.strictEqual(res.statusCode, 403, t.action);
+    assert.match(res.json.msg, /슈퍼관리자/);
+  }
+  assert.strictEqual(db.education_apply.length, 4);
+  assert.ok(!db.courses.find(c => c.title === 'X'));
+});
+
+test('super admin bulk delete: removes selected rows, validates ids and the 100 limit', async () => {
+  seedApps();
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const bad = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: A({ action: 'delete_applications', ids: IDS[0] + ',not-a-uuid' }) });
+  assert.strictEqual(bad.statusCode, 400);
+  const many = Array.from({ length: 101 }, (_, i) => '66666666-6666-4666-8666-' + String(i).padStart(12, '0')).join(',');
+  assert.strictEqual((await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: A({ action: 'delete_applications', ids: many }) })).statusCode, 400);
+  assert.strictEqual((await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: A({ action: 'delete_applications', ids: '' }) })).statusCode, 400);
+  assert.strictEqual(db.education_apply.length, 4);
+
+  const ok = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: A({ action: 'delete_applications', ids: IDS.slice(0, 2).join(',') }) });
+  assert.strictEqual(ok.statusCode, 200, ok.body);
+  assert.strictEqual(ok.json.deleted, 2);
+  assert.deepStrictEqual(db.education_apply.map(a => a.id).sort(), ['a-full', IDS[2]].sort());
+});
+
+test('bulk delete with password-only (aal1) admin is refused', async () => {
+  seedApps();
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const res = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_AAL1_TOKEN, body: A({ action: 'delete_applications', ids: IDS.join(',') }) });
+  assert.strictEqual(res.statusCode, 403);
+  assert.strictEqual(db.education_apply.length, 4);
+});
+
+test('access log records who viewed, downloaded and deleted (via server key only)', async () => {
+  seedApps();
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  await call(handler, { type: 'admin', token: STAFF_TOKEN });
+  const csv = await call(handler, { method: 'POST', type: 'admin', token: STAFF_TOKEN, body: A({ action: 'log_csv', course_id: COURSE_ID, count: '3' }) });
+  assert.strictEqual(csv.statusCode, 200, csv.body);
+  await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: A({ action: 'delete_applications', ids: IDS[0] }) });
+  const log = db.admin_access_log;
+  assert.deepStrictEqual(log.map(l => [l.user_role, l.action]), [['staff', 'view_list'], ['staff', 'download_csv'], ['admin', 'delete_applications']]);
+  assert.strictEqual(log[0].user_email, 'staff1@staff.dcciedu.co.kr');
+  assert.doesNotMatch(JSON.stringify(log), /시험0|e@e/); // 신청자 개인정보는 기록하지 않음
+});
+
+test('CSV download is refused when the access log cannot be written', async () => {
+  const handler = loadHandler(); // 서버 키 없음 → 기록 불가
+  const res = await call(handler, { method: 'POST', type: 'admin', token: STAFF_TOKEN, body: A({ action: 'log_csv', course_id: COURSE_ID, count: '1' }) });
+  assert.strictEqual(res.statusCode, 500);
+  assert.match(res.json.msg, /다운로드/);
 });
