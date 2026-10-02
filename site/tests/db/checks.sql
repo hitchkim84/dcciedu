@@ -23,6 +23,8 @@ DECLARE
   aal1 text := '{"role":"authenticated","aal":"aal1","app_metadata":{"role":"admin"}}';
   aal2 text := '{"role":"authenticated","aal":"aal2","app_metadata":{"role":"admin"}}';
   usr2 text := '{"role":"authenticated","aal":"aal2","app_metadata":{}}';
+  staff1 text := '{"role":"authenticated","aal":"aal1","app_metadata":{"role":"staff"}}';
+  staff2 text := '{"role":"authenticated","aal":"aal2","app_metadata":{"role":"staff"}}';
   r text;
   procedure_check record;
 BEGIN
@@ -36,6 +38,32 @@ BEGIN
   r := pg_temp.as_role('authenticated', aal2, 'SELECT count(*) FROM public.education_apply');
   IF r = 'rows=0' OR r LIKE 'error%' THEN RAISE EXCEPTION '관리자 aal2 신청자 조회: %', r; END IF;
   RAISE NOTICE '신청자 조회: 비로그인 권한 없음, 관리자 aal1·일반 aal2는 0건, 관리자 aal2만 보임(%)', r;
+
+  -- 일반관리자(staff, sql/14): OTP 통과 시 조회만, 쓰기·삭제 불가
+  r := pg_temp.as_role('authenticated', staff2, 'SELECT count(*) FROM public.education_apply');
+  IF r = 'rows=0' OR r LIKE 'error%' THEN RAISE EXCEPTION '일반관리자 aal2 조회: %', r; END IF;
+  r := pg_temp.as_role('authenticated', staff1, 'SELECT count(*) FROM public.education_apply');
+  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 aal1 조회: %', r; END IF;
+  r := pg_temp.as_role('authenticated', staff2, 'WITH x AS (DELETE FROM public.education_apply RETURNING 1) SELECT count(*) FROM x');
+  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 신청 삭제: %', r; END IF;
+  r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.education_apply SET status = 'x' RETURNING 1) SELECT count(*) FROM x$q$);
+  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 신청 수정: %', r; END IF;
+  r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.courses SET title = 'x' RETURNING 1) SELECT count(*) FROM x$q$);
+  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 과정 수정: %', r; END IF;
+  r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (INSERT INTO public.courses (title) VALUES ('s') RETURNING 1) SELECT count(*) FROM x$q$);
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '일반관리자 과정 등록: %', r; END IF;
+  RAISE NOTICE '일반관리자: OTP 통과 시 명단 조회만 가능, aal1은 0건, 신청·과정 수정·삭제·등록 불가';
+
+  -- 접속 기록: 관리자·일반관리자·비로그인 모두 API로 읽기·쓰기 불가, 서버 키만 기록
+  r := pg_temp.as_role('authenticated', aal2, 'SELECT count(*) FROM public.admin_access_log');
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '관리자 접속기록 조회: %', r; END IF;
+  r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (INSERT INTO public.admin_access_log (action) VALUES ('fake') RETURNING 1) SELECT count(*) FROM x$q$);
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '일반관리자 접속기록 위조: %', r; END IF;
+  r := pg_temp.as_role('anon', '{}', 'SELECT count(*) FROM public.admin_access_log');
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '비로그인 접속기록 조회: %', r; END IF;
+  r := pg_temp.as_role('service_role', '{}', $q$WITH x AS (INSERT INTO public.admin_access_log (action) VALUES ('view_list') RETURNING 1) SELECT count(*) FROM x$q$);
+  IF r <> 'rows=1' THEN RAISE EXCEPTION '서버 키 접속기록 쓰기: %', r; END IF;
+  RAISE NOTICE '접속 기록: 관리자·일반관리자·비로그인은 읽기·쓰기 불가, 서버 키만 기록';
 
   -- 신청 직접 등록·삭제·수정
   r := pg_temp.as_role('authenticated', aal2, $q$WITH x AS (INSERT INTO public.education_apply (req_id, course_id, name) VALUES ('direct', '55555555-5555-5555-5555-555555555555', 'x') RETURNING 1) SELECT count(*) FROM x$q$);
@@ -110,8 +138,8 @@ BEGIN
   RAISE NOTICE '파기: 종료일+1년 지난 신청만 삭제, 종료 6개월·종료일 미입력(5년 전 신청)은 유지, 과정 행 유지, 하루 지난 조회 기록만 삭제';
 
   -- 자동 실행 등록
-  IF (SELECT count(*) FROM cron.job WHERE jobname IN ('purge-old-applications', 'purge-lookup-log')) <> 2 THEN
-    RAISE EXCEPTION '자동 실행 등록 수가 2가 아님';
+  IF (SELECT count(*) FROM cron.job WHERE jobname IN ('purge-old-applications', 'purge-lookup-log', 'purge-admin-access-log')) <> 3 THEN
+    RAISE EXCEPTION '자동 실행 등록 수가 3이 아님';
   END IF;
-  RAISE NOTICE '자동 실행 2개 등록(두 번 실행해도 중복 없음)';
+  RAISE NOTICE '자동 실행 3개 등록(두 번 실행해도 중복 없음)';
 END $$;

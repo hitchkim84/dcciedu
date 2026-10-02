@@ -23,7 +23,7 @@ expected_policy(tablename, policyname, cmd) AS (
          ('courses', 'Admin can insert courses', 'INSERT'),
          ('courses', 'Admin can update courses', 'UPDATE'),
          ('courses', 'Admin can delete courses', 'DELETE'),
-         ('education_apply', 'Admin can view applications', 'SELECT'),
+         ('education_apply', 'Admin or staff can view applications', 'SELECT'),
          ('education_apply', 'Admin can update applications', 'UPDATE'),
          ('education_apply', 'Admin can delete applications', 'DELETE')
 )
@@ -61,7 +61,7 @@ SELECT '4.표권한', c.relname || ' (' || r.rolname || ')',
        CASE
          WHEN c.relname = 'education_apply' AND r.rolname = 'anon'
               AND has_table_privilege('anon', c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE') THEN '확인 필요(비로그인 권한 남음)'
-         WHEN c.relname IN ('lookup_log', 'apply_list_by_course')
+         WHEN c.relname IN ('lookup_log', 'apply_list_by_course', 'admin_access_log')
               AND has_table_privilege(r.rolname, c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE') THEN '확인 필요(API 접근 가능)'
          WHEN c.relkind IN ('v', 'm') AND has_table_privilege(r.rolname, c.oid, 'INSERT,UPDATE,DELETE,TRUNCATE') THEN '확인 필요(뷰 쓰기 가능: RLS 없이 원본 표 변경 위험)'
          WHEN c.relkind IN ('r', 'p') AND has_table_privilege(r.rolname, c.oid, 'TRUNCATE') THEN '확인 필요(TRUNCATE는 RLS를 무시)'

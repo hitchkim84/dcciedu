@@ -9,6 +9,12 @@ let sessionToken = null; // JWT Access Token
 let allCourses = {}; // 데이터 저장용
 let statusCourses = []; // 신청자 현황 (명단 표/CSV용)
 let editingCourseId = null; // 현재 수정 중인 ID
+// 관리자 등급: admin = 슈퍼관리자(모든 기능), staff = 일반관리자(명단 보기·엑셀 다운로드만)
+// 화면에서는 버튼만 숨기고, 실제 차단은 서버(proxy.js)와 DB 규칙(sql/14)이 한다.
+const ROLE_LABELS = { admin: '슈퍼관리자', staff: '일반관리자' };
+let currentRole = null;
+// 일반관리자 아이디는 이 주소를 붙여 로그인한다(Supabase 계정 이메일: 아이디@staff.dcciedu.co.kr)
+const STAFF_ID_DOMAIN = 'staff.dcciedu.co.kr';
 
 // Initialize Supabase and check session on load
 async function initSupabase() {
@@ -54,7 +60,7 @@ function jwtClaims(token) {
 let mfaFactorId = null; // 등록 또는 입력 중인 OTP 인증 수단 ID
 
 function applySession(session) {
-    if (session && (session.user.app_metadata || {}).role !== 'admin') {
+    if (session && !ROLE_LABELS[(session.user.app_metadata || {}).role]) {
         applySession(null);
         alert('관리자 권한이 없는 계정입니다.');
         supabaseClient.auth.signOut();
@@ -72,11 +78,13 @@ function applySession(session) {
     if (session) {
         const isNew = sessionToken !== session.access_token;
         sessionToken = session.access_token;
+        applyRole(session.user.app_metadata.role);
         document.getElementById('login-modal').classList.add('hidden');
         document.getElementById('admin-content').classList.remove('hidden');
         if (isNew) fetchStatus();
     } else {
         sessionToken = null;
+        currentRole = null;
         document.getElementById('login-modal').classList.remove('hidden');
         document.getElementById('admin-content').classList.add('hidden');
 
@@ -86,6 +94,20 @@ function applySession(session) {
         allCourses = {};
         statusCourses = [];
     }
+}
+
+// 등급에 따라 화면 구성: 일반관리자는 과정 등록·관리 탭을 숨긴다.
+function applyRole(role) {
+    const changed = currentRole !== role;
+    currentRole = role;
+    document.getElementById('role-label').textContent = '(' + ROLE_LABELS[role] + ')';
+    const isSuper = role === 'admin';
+    ['register', 'manage'].forEach(id => document.getElementById('tab-' + id).classList.toggle('hidden', !isSuper));
+    if (changed && !isSuper) switchTab('status');
+}
+
+function isSuperAdmin() {
+    return currentRole === 'admin';
 }
 
 window.onload = initSupabase;
@@ -98,7 +120,7 @@ function hideMfa() {
     document.getElementById('mfa-secret').textContent = '';
     document.getElementById('mfa-code').value = '';
     document.getElementById('login-form').classList.remove('hidden');
-    document.getElementById('login-desc').textContent = '접근 권한을 확인하기 위해 이메일과 비밀번호를 입력해주세요.';
+    document.getElementById('login-desc').textContent = '접근 권한을 확인하기 위해 아이디와 비밀번호를 입력해주세요.';
 }
 
 // OTP 단계: 등록된 인증 앱이 있으면 코드 입력, 없으면 QR 등록부터
@@ -164,10 +186,12 @@ async function verifyMfa() {
 async function tryLogin() {
     const emailInput = document.getElementById('login-email');
     const pwdInput = document.getElementById('login-password');
-    const email = emailInput.value;
+    const loginId = emailInput.value.trim();
     const password = pwdInput.value;
 
-    if (!email || !password) return alert('이메일과 비밀번호를 모두 입력해주세요.');
+    if (!loginId || !password) return alert('아이디와 비밀번호를 모두 입력해주세요.');
+    // '@'가 없으면 일반관리자 아이디로 보고 직원용 주소를 붙인다. 슈퍼관리자는 이메일 그대로 입력.
+    const email = loginId.includes('@') ? loginId : `${loginId}@${STAFF_ID_DOMAIN}`;
 
     const btn = document.querySelector('#login-form button[type="submit"]');
     const originalText = btn.innerText;
@@ -199,6 +223,7 @@ async function logout() {
 }
 
 function switchTab(tabId) {
+    if (tabId !== 'status' && !isSuperAdmin()) tabId = 'status'; // 일반관리자는 신청자 현황만
     // 버튼 스타일 초기화
     ['register', 'status', 'manage'].forEach(id => {
         const btn = document.getElementById('tab-' + id);
@@ -347,6 +372,40 @@ function deleteApplication(btn) {
         .catch(err => { alert('오류 발생: ' + err); btn.disabled = false; });
 }
 
+// 체크한 신청 여러 건 삭제 (슈퍼관리자만, 한 번에 최대 100건)
+function checkAll(box) {
+    document.querySelectorAll(`.app-check[data-course="${box.dataset.idx}"]`).forEach(c => { c.checked = box.checked; });
+}
+
+function deleteSelected(btn) {
+    const checked = [...document.querySelectorAll(`.app-check[data-course="${btn.dataset.idx}"]:checked`)];
+    if (checked.length === 0) return alert('삭제할 신청을 체크해주세요.');
+    if (checked.length > 100) return alert('한 번에 100건까지 삭제할 수 있습니다.');
+    const names = checked.slice(0, 10).map(c => `- ${c.dataset.name} (${c.dataset.company})`).join('\n');
+    const more = checked.length > 10 ? `\n외 ${checked.length - 10}건` : '';
+    if (!confirm(`선택한 신청 ${checked.length}건을 삭제하시겠습니까?\n\n${names}${more}\n\n삭제 후에는 복구할 수 없습니다.`)) return;
+    btn.disabled = true;
+    fetch(scriptURL + '?type=admin', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Authorization': 'Bearer ' + sessionToken
+        },
+        body: new URLSearchParams({ action: 'delete_applications', ids: checked.map(c => c.dataset.id).join(',') })
+    })
+        .then(response => response.json())
+        .then(result => {
+            if (result.result === 'success') {
+                alert(`🗑️ ${result.deleted}건 삭제되었습니다.`);
+                fetchStatus();
+            } else {
+                alert('⛔ 삭제 실패: ' + result.msg);
+                btn.disabled = false;
+            }
+        })
+        .catch(err => { alert('오류 발생: ' + err); btn.disabled = false; });
+}
+
 // 신청자/과정 입력값을 화면에 넣을 때는 반드시 이 함수로 감싼다 (HTML 주입 방지)
 function escapeHtml(value) {
     return String(value === undefined || value === null ? '' : value)
@@ -371,25 +430,34 @@ function renderApplicantsTable(item, idx) {
     if (apps.length === 0) {
         return '<p class="text-sm text-gray-500 py-2">신청자가 없습니다.</p>';
     }
+    // 삭제(개별·선택 삭제)는 슈퍼관리자에게만 보인다.
+    const canDelete = isSuperAdmin();
+    const checkHead = canDelete
+        ? `<th class="px-3 py-2"><input type="checkbox" data-action="check-all" data-idx="${idx}" aria-label="전체 선택"></th>` : '';
     const head = APPLICANT_COLUMNS.map(([, label]) =>
         `<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">${label}</th>`).join('')
-        + '<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">관리</th>';
+        + (canDelete ? '<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">관리</th>' : '');
     const rows = apps.map((app, i) => `
         <tr class="border-t">
+            ${canDelete ? `<td class="px-3 py-2"><input type="checkbox" class="app-check" data-course="${idx}" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}" aria-label="선택"></td>` : ''}
             <td class="px-3 py-2 text-xs text-gray-500">${i + 1}</td>
             ${APPLICANT_COLUMNS.map(([key]) => `<td class="px-3 py-2 text-sm text-gray-800">${escapeHtml(app[key])}</td>`).join('')}
-            <td class="px-3 py-2"><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
-                data-action="delete-application" class="px-2 py-1 text-xs font-bold text-red-600 border border-red-300 rounded hover:bg-red-50">삭제</button></td>
+            ${canDelete ? `<td class="px-3 py-2"><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
+                data-action="delete-application" class="px-2 py-1 text-xs font-bold text-red-600 border border-red-300 rounded hover:bg-red-50">삭제</button></td>` : ''}
         </tr>`).join('');
     return `
         <div class="flex justify-between items-center mb-2">
             <span class="text-sm font-bold text-gray-700">신청자 명단 (${apps.length}명)</span>
-            <button type="button" data-action="download-csv" data-idx="${idx}"
-                class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-bold">엑셀(CSV) 다운로드</button>
+            <div>
+                ${canDelete ? `<button type="button" data-action="delete-selected" data-idx="${idx}"
+                    class="px-3 py-1 mr-2 text-xs font-bold text-red-600 border border-red-300 rounded hover:bg-red-50">선택 삭제</button>` : ''}
+                <button type="button" data-action="download-csv" data-idx="${idx}"
+                    class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-bold">엑셀(CSV) 다운로드</button>
+            </div>
         </div>
         <div class="overflow-x-auto bg-white border rounded-lg">
             <table class="min-w-full whitespace-nowrap">
-                <thead class="bg-gray-50"><tr><th class="px-3 py-2 text-left text-xs font-bold text-gray-500">No</th>${head}</tr></thead>
+                <thead class="bg-gray-50"><tr>${checkHead}<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">No</th>${head}</tr></thead>
                 <tbody>${rows}</tbody>
             </table>
         </div>`;
@@ -411,10 +479,22 @@ function csvCell(value) {
     return '"' + s.replace(/"/g, '""') + '"';
 }
 
-function downloadApplicantsCsv(idx) {
+// 엑셀 다운로드: 서버에 다운로드 기록(접속 기록)을 먼저 남기고, 성공해야 파일을 만든다.
+async function downloadApplicantsCsv(idx) {
     const item = statusCourses[idx];
     if (!item) return;
     const apps = sortedApplicants(item);
+    try {
+        const res = await fetch(scriptURL + '?type=admin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + sessionToken },
+            body: new URLSearchParams({ action: 'log_csv', course_id: item.id, count: String(apps.length) })
+        });
+        const result = await res.json();
+        if (result.result !== 'success') return alert('⛔ 다운로드 실패: ' + result.msg);
+    } catch (err) {
+        return alert('서버 연결 실패로 다운로드하지 못했습니다.');
+    }
     const lines = [
         ['No', ...APPLICANT_COLUMNS.map(([, label]) => label)].map(csvCell).join(','),
         ...apps.map((app, i) => [i + 1, ...APPLICANT_COLUMNS.map(([key]) => app[key])].map(csvCell).join(','))
@@ -668,6 +748,8 @@ const ACTIONS = {
     'submit-course': () => submitCourse(),
     'delete-application': el => deleteApplication(el),
     'download-csv': el => downloadApplicantsCsv(Number(el.dataset.idx)),
+    'delete-selected': el => deleteSelected(el),
+    'check-all': el => checkAll(el),
     'toggle-applicants': el => toggleApplicants(Number(el.dataset.idx)),
     'edit-course': el => loadCourseForEdit(el.dataset.id),
     'delete-course': el => deleteCourse(el.dataset.id)

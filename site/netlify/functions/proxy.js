@@ -328,6 +328,32 @@ function courseFields(reqBody) {
   };
 }
 
+// 관리자 등급: admin = 슈퍼관리자(모든 기능), staff = 일반관리자(명단 보기·엑셀 다운로드만)
+// DB 규칙(sql/14)도 같은 기준으로 한 번 더 막는다.
+const ADMIN_ROLES = ['admin', 'staff'];
+const STAFF_ACTIONS = ['log_csv'];
+const MAX_BULK_DELETE = 100;
+
+// 관리자 접속 기록(sql/14 admin_access_log). 서버 전용 키로만 쓴다. 성공하면 true.
+async function logAccess(user, role, action, detail) {
+  if (!adminDbClient) {
+    console.warn('Access log skipped (no service key):', action);
+    return false;
+  }
+  const { error } = await adminDbClient.from('admin_access_log').insert([{
+    user_id: user.id || null,
+    user_email: user.email || '',
+    user_role: role,
+    action,
+    detail: detail === undefined || detail === null ? null : String(detail).slice(0, 500)
+  }]);
+  if (error) {
+    console.error('Access log failed:', error);
+    return false;
+  }
+  return true;
+}
+
 const COURSE_HAS_APPLICANTS_MSG = '신청자가 있는 과정은 삭제할 수 없습니다. 신청자 명단을 먼저 정리해주세요.';
 
 exports.handler = async function(event, context) {
@@ -343,6 +369,8 @@ exports.handler = async function(event, context) {
   const reqBody = parseBody(event);
   const isPublic = (event.queryStringParameters || {}).type === 'public';
   let dbClient = supabase;
+  let adminUser = null;
+  let adminRole = null;
 
   if (!isPublic) {
     const headers = event.headers || {};
@@ -358,10 +386,12 @@ exports.handler = async function(event, context) {
       return jsonRes(401, { result: 'error', msg: '로그인이 필요합니다.' });
     }
 
-    // DB 규칙(RLS)과 별개로 서버에서도 관리자 역할을 확인한다 (이중 잠금).
-    if (!user.app_metadata || user.app_metadata.role !== 'admin') {
+    // DB 규칙(RLS)과 별개로 서버에서도 관리자 등급을 확인한다 (이중 잠금).
+    adminRole = (user.app_metadata || {}).role;
+    if (!ADMIN_ROLES.includes(adminRole)) {
       return jsonRes(403, { result: 'error', msg: '관리자 권한이 없습니다.' });
     }
+    adminUser = user;
 
     // 비밀번호만 통과한 로그인(aal1)은 거절하고, OTP까지 통과한 로그인(aal2)만 허용한다.
     if (jwtClaims(token).aal !== 'aal2') {
@@ -418,6 +448,8 @@ exports.handler = async function(event, context) {
 
           responseData[course.id] = { ...mapCourse(course, apps.length), applicants: apps };
         });
+        const total = courses.reduce((n, c) => n + (c.education_apply || []).length, 0);
+        await logAccess(adminUser, adminRole, 'view_list', `과정 ${courses.length}개, 신청 ${total}건`);
         return jsonRes(200, responseData);
       }
     } catch (err) {
@@ -445,6 +477,39 @@ exports.handler = async function(event, context) {
         return jsonRes(403, { result: 'error', msg: '권한이 없습니다.' });
       }
 
+      // 일반관리자는 정해진 동작(엑셀 다운로드 기록)만 할 수 있다.
+      if (adminRole !== 'admin' && !STAFF_ACTIONS.includes(action)) {
+        return jsonRes(403, { result: 'error', msg: '슈퍼관리자만 할 수 있는 작업입니다.' });
+      }
+
+      // 엑셀(CSV) 다운로드 기록. 기록에 실패하면 다운로드하지 않도록 오류를 돌려준다.
+      if (action === 'log_csv') {
+        const courseId = str(reqBody.course_id);
+        const count = parseInt(reqBody.count, 10) || 0;
+        if (!UUID_RE.test(courseId)) return jsonRes(400, { result: 'error', msg: '잘못된 요청입니다.' });
+        const ok = await logAccess(adminUser, adminRole, 'download_csv', `과정 ${courseId}, ${count}건`);
+        if (!ok) return jsonRes(500, { result: 'error', msg: '다운로드 기록을 남기지 못해 다운로드를 중단했습니다. 잠시 후 다시 시도해주세요.' });
+        return jsonRes(200, { result: 'success' });
+      }
+
+      // 신청 여러 건 삭제 (슈퍼관리자만, 한 번에 최대 100건. DB 규칙에서도 확인)
+      if (action === 'delete_applications') {
+        const ids = [...new Set(str(reqBody.ids).split(',').map(x => x.trim()).filter(Boolean))];
+        if (ids.length === 0 || ids.length > MAX_BULK_DELETE || !ids.every(id => UUID_RE.test(id))) {
+          return jsonRes(400, { result: 'error', msg: `삭제할 신청을 1~${MAX_BULK_DELETE}건 선택해주세요.` });
+        }
+        const { data, error } = await dbClient
+          .from('education_apply')
+          .delete()
+          .in('id', ids)
+          .select('id');
+        if (error) throw error;
+        const deleted = (data || []).length;
+        await logAccess(adminUser, adminRole, 'delete_applications', `요청 ${ids.length}건, 삭제 ${deleted}건`);
+        if (deleted === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 신청을 찾을 수 없습니다.' });
+        return jsonRes(200, { result: 'success', deleted });
+      }
+
       if ((action === 'add_course' || action === 'update_course') && validateCourse(reqBody)) {
         return jsonRes(400, { result: 'error', msg: validateCourse(reqBody) });
       }
@@ -460,6 +525,7 @@ exports.handler = async function(event, context) {
           .select();
 
         if (error) throw error;
+        await logAccess(adminUser, adminRole, 'add_course', `과정 ${data[0].id}`);
         return jsonRes(200, { result: 'success', id: data[0].id });
       }
 
@@ -475,6 +541,7 @@ exports.handler = async function(event, context) {
 
         if (error) throw error;
         if (!data || data.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 신청을 찾을 수 없습니다.' });
+        await logAccess(adminUser, adminRole, 'delete_application', `신청 ${id}`);
         return jsonRes(200, { result: 'success' });
       }
 
@@ -488,6 +555,7 @@ exports.handler = async function(event, context) {
 
         if (error) throw error;
         if (!data || data.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 과정을 찾을 수 없습니다.' });
+        await logAccess(adminUser, adminRole, 'update_course', `과정 ${reqBody.id}`);
         return jsonRes(200, { result: 'success' });
       }
 
@@ -510,6 +578,7 @@ exports.handler = async function(event, context) {
         if (error && error.code === '23503') return jsonRes(409, { result: 'error', msg: COURSE_HAS_APPLICANTS_MSG });
         if (error) throw error;
         if (!data || data.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 과정을 찾을 수 없습니다.' });
+        await logAccess(adminUser, adminRole, 'delete_course', `과정 ${reqBody.id}`);
         return jsonRes(200, { result: 'success' });
       }
 
