@@ -19,7 +19,7 @@
 - 신청 확인(홈페이지 '신청 확인'): 성명·휴대폰·이메일 3가지가 모두 일치할 때만 과정명·교육일시·신청일시를 보여준다. 본인 인증이 아니므로(세 가지를 아는 사람은 조회 가능) 개인정보는 돌려주지 않고, 틀려도 같은 답을 준다. 반복 조회 제한과 일치 확인은 DB 함수 `lookup_my_applications`(`sql/12`)에서 잠금 후 한다.
 - 신청 삭제(관리자 명단의 '삭제'): OTP 통과 관리자만, 화면 확인 창 → 서버 → DB 규칙(`sql/09`) 순서로 확인한다. 삭제는 되돌릴 수 없다.
 - 과정 삭제: 신청자가 있는 과정은 삭제할 수 없다(서버 확인 + DB `ON DELETE RESTRICT`, `sql/12`).
-- 개인정보 파기: 교육 종료일(`courses.end_date`) + 1년이 지난 신청은 `purge_old_applications()`가 매월 자동 삭제(`sql/12`, pg_cron). 종료일이 없는 과정은 지우지 않으므로 관리자가 종료일을 입력한다. 자동 실행 성공 여부는 `check_security.sql`의 `cron.job_run_details` 결과로 확인한다. 삭제 테스트는 운영 DB가 아닌 임시 DB(`tests/db/run.sh`)에서 한다.
+- 개인정보 파기: 교육 종료일(`courses.end_date`) + 1년이 지난 신청은 `purge_old_applications()`가 매월 자동 삭제(`sql/12`, pg_cron). 종료일이 없는 과정은 지우지 않으므로 관리자가 종료일을 입력한다. 자동 실행 성공 여부는 `sql/check_cron.sql`(읽기 전용)로 확인한다. 삭제 테스트는 운영 DB가 아닌 임시 DB(`tests/db/run.sh`)에서 한다.
 - 외부 스크립트 금지: 디자인은 `public/tailwind.css`(미리 생성)만 쓴다. 관리자 페이지는 CSP로 외부·인라인 스크립트를 모두 막는다(코드는 `public/admin.js`, 버튼은 `data-action`으로 연결, onclick 금지). 홈페이지도 CSP로 허용한 외부 주소(Cloudflare·네이버 지도·글꼴)만 쓴다. 새 외부 주소가 필요하면 `netlify.toml` CSP에 추가.
 - 관리자 로그인 정보는 브라우저 탭 안(sessionStorage)에만 두고, 30분 동안 조작이 없으면 자동 로그아웃한다.
 - `SUPABASE_SERVICE_ROLE_KEY`·`TURNSTILE_SECRET`은 Netlify에서 Production 배포에만 쓰이게 한다(Deploy Preview 제외). 공개 저장소라 외부인의 PR 미리보기가 비밀값을 읽을 수 있기 때문.

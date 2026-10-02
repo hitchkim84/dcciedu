@@ -50,7 +50,7 @@
 - 과정 삭제: 신청자가 있으면 삭제 불가(서버 + `sql/12`의 ON DELETE RESTRICT)
 - 개인정보 자동 파기: `purge_old_applications` (`sql/12`) — 교육 종료일(`end_date`) + 1년 지난 신청만 삭제, 매월 1일 pg_cron. 종료일이 비어 있는 과정은 지우지 않으므로 관리자 페이지에서 종료일을 입력한다
 - 조회 기록 정리: `purge_lookup_log` (`sql/12`) — 하루 지난 조회 기록 삭제, 매일 pg_cron
-- 보안 상태 점검: `sql/check_security.sql`(읽기 전용) — 결과의 '확인 필요' 줄을 확인한다
+- 보안 상태 점검: `sql/check_security.sql`(읽기 전용) — 결과의 '확인 필요' 줄을 확인한다. 자동 실행 결과는 `sql/check_cron.sql`(읽기 전용)
 - 검색 노출: `public/robots.txt`(관리자·API 제외), `public/sitemap.xml`, 탭 아이콘 `public/favicon.ico`
 
 ## 6-3. 디자인 CSS 재생성 (Tailwind)

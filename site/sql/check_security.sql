@@ -1,5 +1,6 @@
 -- 보안 상태 확인용 (읽기 전용: 아무것도 바꾸지 않는다)
 -- Supabase SQL Editor에서 전체를 실행하면 결과가 하나의 표로 나온다(항목·대상·내용·판정).
+-- 자동 실행(pg_cron) 결과는 check_cron.sql로 따로 확인한다.
 -- 판정이 '확인 필요'인 줄이 있으면 그 줄의 내용을 담당자(또는 Claude)에게 전달한다.
 -- 개인정보(이름·연락처 등)는 결과에 나오지 않는다. 숫자(건수)만 나온다.
 
@@ -103,16 +104,3 @@ SELECT '8.조회기록', 'lookup_log', '전체 ' || count(*) || '건, 하루 지
        CASE WHEN count(*) FILTER (WHERE created_at < now() - interval '2 days') = 0 THEN '정상' ELSE '확인 필요(정리 미실행)' END
   FROM lookup_log
 ORDER BY 1, 2;
-
--- 9. 자동 실행 목록과 최근 실행 결과 (pg_cron이 켜져 있을 때만. 위 쿼리와 따로 실행)
---    status가 succeeded여야 한다. failed면 return_message를 확인한다.
-SELECT j.jobname, j.schedule, j.active, d.status, d.return_message, d.start_time
-  FROM cron.job j
-  LEFT JOIN LATERAL (
-    SELECT status, return_message, start_time
-      FROM cron.job_run_details r
-     WHERE r.jobid = j.jobid
-     ORDER BY start_time DESC
-     LIMIT 3
-  ) d ON true
- ORDER BY j.jobname, d.start_time DESC;

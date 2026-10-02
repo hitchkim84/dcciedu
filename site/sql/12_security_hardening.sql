@@ -19,7 +19,7 @@
 --  E. SECURITY DEFINER 함수: search_path를 비우고 모든 표를 public.으로 지정. 신청 함수는 서버 전용 키(service_role)만 실행.
 --     (신청 확인 조회 함수는 새 코드 배포 뒤 sql/13에서 서버 전용으로 바꾼다)
 --     신청·조회 횟수 제한은 잠금(advisory lock)을 건 뒤 세어서 동시 요청으로 제한을 넘지 못하게 한다.
---  F. 조회 기록 정리를 조회 함수 밖으로 분리해 매일 자동 실행. 자동 실행 성공 여부 확인 쿼리는 check_security.sql에 있다.
+--  F. 조회 기록 정리를 조회 함수 밖으로 분리해 매일 자동 실행. 자동 실행 성공 여부 확인 쿼리는 check_cron.sql에 있다.
 --  G. 위 3개 외에 public 스키마의 SECURITY DEFINER 함수는 홈페이지 키(anon·authenticated)로 실행하지 못하게 한다.
 
 BEGIN;
