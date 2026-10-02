@@ -49,7 +49,7 @@
 |---|---|---|
 | 코드 (GitHub `hitchkim84/dcciedu`) | 개인 | 개인 GitHub |
 | 배포 (Netlify `dcciedu.co.kr`) | 회사 | 회사 구글 계정 |
-| DB (Supabase 조직 `DCCI_EDU`) | 개인 + 회사 공동 Owner | 각자 GitHub (회사 Supabase는 회사 GitHub로 로그인) |
+| DB (Supabase 조직 `DCCI`, 프로젝트 `DCCI_EDU`) | 개인 + 회사 공동 Owner | 각자 GitHub (회사 Supabase는 회사 GitHub로 로그인) |
 | 관리자 페이지 | 회사 | 회사 이메일 + 관리자 비밀번호 |
 
 - 모든 계정은 2단계 인증을 켠다. 회사 일은 회사 전용 크롬 프로필에서만 한다(개인·회사 GitHub 혼동 방지).
@@ -59,6 +59,6 @@
 2. 회사 구글 계정: 비밀번호 변경 → 2단계 인증 기기를 새 담당자 휴대폰으로 변경 → 백업 코드 재발급 후 회사가 관리하는 곳에 보관 → 옛 기기 로그아웃.
 3. 회사 GitHub 계정: 비밀번호 변경 → 2단계 인증 기기 변경 → 복구 코드 재발급.
 4. 관리자 페이지 비밀번호 변경 (Supabase SQL Editor, 실행 후 쿼리 삭제).
-5. Supabase `DCCI_EDU`: 새 담당자 확인 후 개인 계정 Owner 제외.
+5. Supabase 조직 `DCCI`(교육 `DCCI_EDU`·채용 `dcci-recruit` 프로젝트 포함): 새 담당자 확인 후 개인 계정 Owner 제외.
 6. 코드: 회사 쪽 GitHub에 사본을 만들고 Netlify 연결을 그쪽으로 바꾼다(개인 저장소는 넘기지 않음).
 7. 도메인(dcciedu.co.kr)과 Netlify 결제 수단이 회사 명의인지 확인.
