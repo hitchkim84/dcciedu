@@ -16,13 +16,14 @@
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=()"
     Strict-Transport-Security = "max-age=31536000"
 
-# 관리자 페이지: 외부 스크립트 실행 금지(CSP), 다른 사이트에 끼워 넣기(클릭재킹) 금지, 검색 노출 금지, 브라우저 캐시 금지
+# 관리자 페이지: 외부 스크립트·인라인 스크립트 실행 금지(CSP), 다른 사이트에 끼워 넣기(클릭재킹) 금지, 검색 노출 금지, 브라우저 캐시 금지
+# 동작 코드는 public/admin.js에만 둔다(onclick 같은 속성이나 <script> 안 코드는 CSP가 막음)
 # 외부 주소를 새로 쓰게 되면 CSP에 추가해야 한다 (Supabase *.supabase.co, 구글 폰트만 허용)
 [[headers]]
   for = "/admin.html"
   [headers.values]
     X-Frame-Options = "DENY"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
     X-Robots-Tag = "noindex, nofollow"
     Cache-Control = "no-store"
 
@@ -30,7 +31,29 @@
   for = "/admin"
   [headers.values]
     X-Frame-Options = "DENY"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
     X-Robots-Tag = "noindex, nofollow"
     Cache-Control = "no-store"
 
+# 홈페이지·안내 페이지: 허용한 곳(Cloudflare 로봇 확인, 네이버 지도, 글꼴)의 스크립트만 실행, 다른 사이트에 끼워 넣기 금지
+# 홈페이지는 onclick 등 인라인 코드가 많아 'unsafe-inline'을 아직 허용한다(관리자 페이지보다 약함).
+# 지도·로봇 확인이 안 보이면 브라우저 개발자도구(F12) 콘솔의 'Content Security Policy' 오류에 나온 주소를 추가한다.
+[[headers]]
+  for = "/"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://oapi.map.naver.com https://*.naver.com https://*.naver.net https://*.pstatic.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://challenges.cloudflare.com https://*.naver.com https://*.naver.net https://*.pstatic.net https://*.navercorp.com; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://oapi.map.naver.com https://*.naver.com https://*.naver.net https://*.pstatic.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://challenges.cloudflare.com https://*.naver.com https://*.naver.net https://*.pstatic.net https://*.navercorp.com; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+
+[[headers]]
+  for = "/privacy.html"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://oapi.map.naver.com https://*.naver.com https://*.naver.net https://*.pstatic.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://challenges.cloudflare.com https://*.naver.com https://*.naver.net https://*.pstatic.net https://*.navercorp.com; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+
+[[headers]]
+  for = "/email_policy.html"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://oapi.map.naver.com https://*.naver.com https://*.naver.net https://*.pstatic.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://challenges.cloudflare.com https://*.naver.com https://*.naver.net https://*.pstatic.net https://*.navercorp.com; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"

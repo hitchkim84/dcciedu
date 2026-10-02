@@ -1,3 +1,4 @@
+-- 주의(2026-10): 이 파일의 관리자 규칙에는 OTP(aal2) 조건이 없다. 다시 실행하지 말 것. 실행했다면 sql/12를 다시 실행한다.
 -- 1. 조회 기능 및 멱등성 컬럼 추가
 ALTER TABLE education_apply ADD COLUMN IF NOT EXISTS lookup_id text UNIQUE;
 ALTER TABLE education_apply ADD COLUMN IF NOT EXISTS lookup_password_hash text;

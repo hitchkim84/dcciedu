@@ -605,7 +605,7 @@
             window.onTurnstileLoad = () => {
                 const box = document.getElementById('captchaBox');
                 box.classList.remove('hidden');
-                captchaWidgetId = window.turnstile.render(box, { sitekey: siteKey, language: 'ko' });
+                captchaWidgetId = window.turnstile.render(box, { sitekey: siteKey, language: 'ko', action: 'apply' }); // action: 서버가 신청 화면 토큰인지 확인
             };
             const script = document.createElement('script');
             script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=onTurnstileLoad';

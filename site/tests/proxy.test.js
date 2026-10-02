@@ -1,5 +1,6 @@
-// Handler-level tests for netlify/functions/proxy.js with an in-memory Supabase fake
-// that mimics the RLS policies in sql/01_setup.sql. Run: node --test tests/
+// 서버 함수(proxy.js) 단위 테스트: Supabase와 Cloudflare를 흉내 낸 가짜(mock)로 돌린다. Run: node --test tests/proxy.test.js
+// 주의: 여기의 '권한 없음' 결과는 가짜 DB가 흉내 낸 것이라 실제 RLS·MFA·동시성을 증명하지 않는다.
+//   실제 PostgreSQL에서 확인하는 테스트는 tests/db/run.sh, 운영 DB 상태는 sql/check_security.sql로 확인한다.
 const { test, beforeEach } = require('node:test');
 const assert = require('node:assert');
 const Module = require('module');
@@ -26,6 +27,7 @@ function resetDb() {
   outboundBodies = [];
   lookupCount = {};
   lastRpcClientKey = null;
+  lastLookupClientKey = null;
   viewExists = true;
 }
 
@@ -109,6 +111,10 @@ function makeQuery(client, table) {
       return { data: inserted, error: null };
     }
     const hit = rows.filter(match);
+    // sql/12: 신청자가 있는 과정은 삭제 불가(ON DELETE RESTRICT)
+    if (q.op === 'delete' && table === 'courses' && hit.some(c => db.education_apply.some(a => a.course_id === c.id))) {
+      return { data: null, error: { message: 'violates foreign key constraint', code: '23503' } };
+    }
     if (q.op === 'update') hit.forEach(r => Object.assign(r, q.fields));
     if (q.op === 'delete') db[table] = rows.filter(r => !match(r));
     return { data: q.returning ? hit.map(r => ({ id: r.id })) : null, error: null };
@@ -122,6 +128,7 @@ function raise(message) {
 
 let lastRpcParams = null;
 let lastRpcClientKey = null;
+let lastLookupClientKey = null;
 function atomicCourseApply(p) {
   lastRpcParams = p;
   const existing = db.education_apply.find(a => a.req_id === p.p_req_id);
@@ -162,7 +169,7 @@ function createClient(url, key, opts = {}) {
   client.from = table => makeQuery(client, table);
   client.rpc = async (name, params) => {
     if (name === 'atomic_course_apply') { lastRpcClientKey = client.key; return atomicCourseApply(params); }
-    if (name === 'lookup_my_applications') return lookupMyApplications(params);
+    if (name === 'lookup_my_applications') { lastLookupClientKey = client.key; return lookupMyApplications(params); }
     return raise('unknown rpc');
   };
   client.auth = {
@@ -185,28 +192,39 @@ Module._load = function (request, parent, isMain) {
 };
 
 function loadHandler(env) {
-  for (const k of ['SUPABASE_URL', 'SUPABASE_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_SCRIPT_URL', 'APPS_SCRIPT_SECRET', 'TURNSTILE_SECRET']) delete process.env[k];
-  Object.assign(process.env, { SUPABASE_URL: 'https://example.supabase.co', SUPABASE_KEY: 'anon' }, env);
+  for (const k of ['SUPABASE_URL', 'SUPABASE_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_SCRIPT_URL', 'APPS_SCRIPT_SECRET',
+    'TURNSTILE_SECRET', 'TURNSTILE_DISABLED', 'TURNSTILE_HOSTNAMES']) delete process.env[k];
+  // 운영과 같이 로봇 확인 키가 있는 상태가 기본. env에 undefined를 주면 그 값은 없는 상태로 테스트한다.
+  const merged = { SUPABASE_URL: 'https://example.supabase.co', SUPABASE_KEY: 'anon', TURNSTILE_SECRET: 'ts-secret', ...env };
+  for (const [k, v] of Object.entries(merged)) if (v !== undefined) process.env[k] = v;
   delete require.cache[require.resolve(PROXY_PATH)];
   return require(PROXY_PATH).handler;
 }
 
 // 신청 정보는 DB에만 저장해야 하므로 외부로 나가는 요청은 모두 기록해 검사한다.
-// Turnstile 확인 요청만 허용되며, 토큰이 'good-token'이면 성공, 'down'이면 장애로 흉내낸다.
+// Turnstile 확인 요청만 허용된다. 토큰별 가짜 응답:
+//   good-token: 성공(dcciedu.co.kr, action=apply) / other-host: 다른 사이트에서 발급 / other-action: 다른 화면에서 발급
+//   down: 계속 장애 / flaky: 첫 시도만 장애 / 그 밖: 실패
 let outboundBodies = [];
 global.fetch = async (url, init = {}) => {
   outboundCalls.push(String(url));
   const body = init.body ? Object.fromEntries(new URLSearchParams(init.body.toString())) : {};
   outboundBodies.push(body);
   if (body.response === 'down') throw new Error('ECONNRESET');
-  const success = body.response === 'good-token';
-  return { ok: true, status: 200, json: async () => ({ success }), text: async () => JSON.stringify({ success }) };
+  if (body.response === 'flaky' && outboundCalls.length === 1) throw new Error('ECONNRESET');
+  const ok = ['good-token', 'flaky', 'other-host', 'other-action'].includes(body.response);
+  const json = {
+    success: ok,
+    hostname: body.response === 'other-host' ? 'evil.example' : 'dcciedu.co.kr',
+    action: body.response === 'other-action' ? 'login' : 'apply'
+  };
+  return { ok: true, status: 200, json: async () => json, text: async () => JSON.stringify(json) };
 };
 
 function applyForm(overrides = {}) {
   return new URLSearchParams({
     course: '세무회계 실무', course_id: COURSE_ID, bizName: '대구상사', bizNo: '123-45-67890', dept: '총무팀',
-    position: '대리', name: '홍길동', phone: '010-1234-5678', email: 'hong@example.com', privacy: '동의함', ...overrides
+    position: '대리', name: '홍길동', phone: '010-1234-5678', email: 'hong@example.com', privacy: '동의함', captcha: 'good-token', ...overrides
   }).toString();
 }
 
@@ -363,11 +381,11 @@ test('invalid email is rejected', async () => {
   assert.strictEqual(db.education_apply.length, 1);
 });
 
-test('applications are stored only in the DB (no outbound requests, even with an old sheet URL set)', async () => {
+test('applications are not copied to an external service (only the captcha check goes out, even with an old sheet URL set)', async () => {
   const handler = loadHandler({ GOOGLE_SCRIPT_URL: 'https://script.example/exec', SUPABASE_SERVICE_ROLE_KEY: 'service' });
   const res = await call(handler, { method: 'POST', body: applyForm() });
   assert.strictEqual(res.statusCode, 200);
-  assert.deepStrictEqual(outboundCalls, []);
+  assert.deepStrictEqual(outboundCalls, ['https://challenges.cloudflare.com/turnstile/v0/siteverify']);
 });
 
 test('lookup id and password hash are not stored', async () => {
@@ -386,16 +404,19 @@ test('honeypot field filled by a bot is rejected without saving', async () => {
   assert.strictEqual(db.education_apply.length, 1);
 });
 
-test('without TURNSTILE_SECRET the captcha is not required (safe before keys are set)', async () => {
-  const handler = loadHandler();
+test('without TURNSTILE_SECRET applications are refused (fail-closed) unless explicitly disabled', async () => {
+  let handler = loadHandler({ TURNSTILE_SECRET: undefined });
   const res = await call(handler, { method: 'POST', body: applyForm() });
-  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(res.statusCode, 503);
+  assert.strictEqual(db.education_apply.length, 1);
+  handler = loadHandler({ TURNSTILE_SECRET: undefined, TURNSTILE_DISABLED: 'true' });
+  assert.strictEqual((await call(handler, { method: 'POST', body: applyForm({ captcha: '' }) })).statusCode, 200);
   assert.deepStrictEqual(outboundCalls, []);
 });
 
 test('with TURNSTILE_SECRET: missing or failed captcha is rejected, valid captcha is saved', async () => {
   const handler = loadHandler({ TURNSTILE_SECRET: 'ts-secret' });
-  assert.strictEqual((await call(handler, { method: 'POST', body: applyForm() })).statusCode, 400);
+  assert.strictEqual((await call(handler, { method: 'POST', body: applyForm({ captcha: '' }) })).statusCode, 400);
   assert.strictEqual((await call(handler, { method: 'POST', body: applyForm({ captcha: 'bad-token' }) })).statusCode, 400);
   assert.strictEqual(db.education_apply.length, 1);
   const ok = await call(handler, { method: 'POST', body: applyForm({ captcha: 'good-token' }) });
@@ -411,10 +432,29 @@ test('captcha check sends only the token (no personal data) to Cloudflare', asyn
   assert.doesNotMatch(JSON.stringify(outboundBodies), /홍길동|010|hong@|대구상사/);
 });
 
-test('Cloudflare outage does not stop applications (fail-open on network error)', async () => {
-  const handler = loadHandler({ TURNSTILE_SECRET: 'ts-secret' });
+test('Cloudflare outage: retried once, then the application is refused (fail-closed)', async () => {
+  const handler = loadHandler();
   const res = await call(handler, { method: 'POST', body: applyForm({ captcha: 'down' }) });
-  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(res.statusCode, 503);
+  assert.match(res.json.msg, /잠시 후/);
+  assert.strictEqual(outboundCalls.length, 2);
+  assert.strictEqual(db.education_apply.length, 1);
+});
+
+test('a single network blip is absorbed by the retry', async () => {
+  const handler = loadHandler();
+  const res = await call(handler, { method: 'POST', body: applyForm({ captcha: 'flaky' }) });
+  assert.strictEqual(res.statusCode, 200, res.body);
+  assert.strictEqual(outboundCalls.length, 2);
+});
+
+test('captcha tokens issued for another hostname or another action are rejected', async () => {
+  const handler = loadHandler();
+  assert.strictEqual((await call(handler, { method: 'POST', body: applyForm({ captcha: 'other-host' }) })).statusCode, 400);
+  assert.strictEqual((await call(handler, { method: 'POST', body: applyForm({ captcha: 'other-action' }) })).statusCode, 400);
+  assert.strictEqual(db.education_apply.length, 1);
+  const custom = loadHandler({ TURNSTILE_HOSTNAMES: 'evil.example' });
+  assert.strictEqual((await call(custom, { method: 'POST', body: applyForm({ captcha: 'other-host' }) })).statusCode, 200);
 });
 
 test('applications use the server-only key when it is configured', async () => {
@@ -493,6 +533,12 @@ test('lookup input is validated and repeated lookups are limited', async () => {
   assert.match(last.json.msg, /잠시 후/);
 });
 
+test('lookup uses the server-only key when it is configured (sql/13)', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  await call(handler, { method: 'POST', body: lookupForm() });
+  assert.strictEqual(lastLookupClientKey, 'service');
+});
+
 test('lookup is only on the public endpoint and does not touch admin data', async () => {
   const handler = loadHandler();
   const res = await call(handler, { method: 'POST', type: 'admin', token: USER_TOKEN, body: lookupForm() });
@@ -534,27 +580,50 @@ test('admin GET returns applicants; logged-in non-admin is refused by the server
 
 test('admin add/update/delete course; non-admin gets 403 or error', async () => {
   const handler = loadHandler();
-  const add = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: new URLSearchParams({ action: 'add_course', title: '신규', capacity: '10', cost: '무료' }).toString() });
+  const add = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: new URLSearchParams({ action: 'add_course', title: '신규', capacity: '10', cost: '무료', endDate: '2026-12-31' }).toString() });
   assert.strictEqual(add.statusCode, 200);
-  const id = add.json.id;
+  db.courses.find(c => c.title === '신규').id = '44444444-4444-4444-8444-444444444444';
+  const id = '44444444-4444-4444-8444-444444444444';
+  assert.strictEqual(db.courses.find(c => c.id === id).end_date, '2026-12-31');
 
-  const upd = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: new URLSearchParams({ action: 'update_course', id, title: '변경' }).toString() });
+  const upd = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: new URLSearchParams({ action: 'update_course', id, title: '변경', endDate: '2026-12-31' }).toString() });
   assert.strictEqual(upd.statusCode, 200);
   assert.strictEqual(db.courses.find(c => c.id === id).title, '변경');
 
-  const updUser = await call(handler, { method: 'POST', type: 'admin', token: USER_TOKEN, body: new URLSearchParams({ action: 'update_course', id, title: 'X' }).toString() });
+  const updUser = await call(handler, { method: 'POST', type: 'admin', token: USER_TOKEN, body: new URLSearchParams({ action: 'update_course', id, title: 'X', endDate: '2026-12-31' }).toString() });
   assert.strictEqual(updUser.statusCode, 403);
 
   const delUser = await call(handler, { method: 'POST', type: 'admin', token: USER_TOKEN, body: new URLSearchParams({ action: 'delete_course', id }).toString() });
   assert.strictEqual(delUser.statusCode, 403);
 
-  const addUser = await call(handler, { method: 'POST', type: 'admin', token: USER_TOKEN, body: new URLSearchParams({ action: 'add_course', title: 'X' }).toString() });
+  const addUser = await call(handler, { method: 'POST', type: 'admin', token: USER_TOKEN, body: new URLSearchParams({ action: 'add_course', title: 'X', endDate: '2026-12-31' }).toString() });
   assert.strictEqual(addUser.statusCode, 403);
   assert.ok(!db.courses.find(c => c.title === 'X'));
 
   const del = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: new URLSearchParams({ action: 'delete_course', id }).toString() });
   assert.strictEqual(del.statusCode, 200);
   assert.ok(!db.courses.find(c => c.id === id));
+});
+
+test('course without an end date (retention basis) is refused', async () => {
+  const handler = loadHandler();
+  const add = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: new URLSearchParams({ action: 'add_course', title: '종료일 없음' }).toString() });
+  assert.strictEqual(add.statusCode, 400);
+  assert.match(add.json.msg, /종료일/);
+  const bad = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: new URLSearchParams({ action: 'update_course', id: COURSE_ID, title: 'x', endDate: '12/31' }).toString() });
+  assert.strictEqual(bad.statusCode, 400);
+  assert.strictEqual(db.courses.length, 2);
+});
+
+test('course with applicants cannot be deleted (server check, and DB restrict as backup)', async () => {
+  const handler = loadHandler();
+  const del = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: new URLSearchParams({ action: 'delete_course', id: FULL_ID }).toString() });
+  assert.strictEqual(del.statusCode, 409);
+  assert.match(del.json.msg, /신청자가 있는 과정/);
+  assert.ok(db.courses.find(c => c.id === FULL_ID));
+  assert.strictEqual(db.education_apply.length, 1);
+  const badId = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: new URLSearchParams({ action: 'delete_course', id: 'x' }).toString() });
+  assert.strictEqual(badId.statusCode, 400);
 });
 
 test('retry_sync (old sheet re-send) is no longer accepted', async () => {
@@ -576,4 +645,11 @@ test('admin GET formats applicant timestamps in Korea time', async () => {
   const handler = loadHandler();
   const res = await call(handler, { type: 'admin', token: ADMIN_TOKEN });
   assert.strictEqual(res.json[FULL_ID].applicants[0].timestamp, '2026. 10. 01 17:22:05');
+});
+
+test('courses expose the end date to the admin page', async () => {
+  db.courses[0].end_date = '2026-11-30';
+  const handler = loadHandler();
+  const res = await call(handler, { type: 'admin', token: ADMIN_TOKEN });
+  assert.strictEqual(res.json[COURSE_ID].endDate, '2026-11-30');
 });

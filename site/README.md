@@ -4,14 +4,16 @@
 대구상공회의소 교육센터 홈페이지(dcciedu.co.kr)입니다. Netlify(Personal 플랜)에서 운영하며, 데이터는 Supabase에 저장합니다.
 
 ## 2. 구조
-- `public/`: 홈페이지(index.html)와 관리자 페이지(admin.html) 등 정적 파일
+- `public/`: 홈페이지(index.html)와 관리자 페이지(admin.html, 동작 코드는 admin.js) 등 정적 파일
 - `netlify/functions/`: 서버리스 함수(`proxy.js`, `config.js`). `exports.handler = async (event, context)` 형태입니다.
 - `netlify.toml`: 클라이언트가 호출하는 `/api/*` 경로를 `/.netlify/functions/*`로 연결하는 리다이렉트 설정
 - `sql/`: Supabase SQL Editor에서 순서대로 실행하는 DB 설정 스크립트
 - `public/vendor/`: 관리자 페이지가 쓰는 Supabase 라이브러리 (외부 CDN 대신 직접 제공, 버전 고정)
-- `tests/proxy.test.js`: 서버 함수 테스트. `node --test tests/proxy.test.js`로 실행
+- `tests/proxy.test.js`: 서버 함수 테스트(가짜 Supabase 사용). `node --test tests/proxy.test.js`로 실행
+- `tests/db/run.sh`: 실제 PostgreSQL 임시 DB에서 접근 규칙·함수 권한·동시 요청 제한·파기 기준 확인. `bash tests/db/run.sh` (PostgreSQL 설치 필요, 운영 DB는 건드리지 않음)
+- `sql/check_security.sql`: 운영 DB 보안 상태 확인(읽기 전용, 아무것도 바꾸지 않음)
 
-신청 정보는 Supabase DB에만 저장하며, 구글 시트 등 외부로 보내지 않습니다. 신청자 명단은 관리자 페이지에서 조회하고 CSV로 내려받습니다.
+신청 정보는 Supabase DB에만 저장하며, 서버 코드에서 구글 시트 등 외부로 보내지 않습니다(로봇 확인용 토큰·IP만 Cloudflare로 보냄). 신청자 명단은 관리자 페이지에서 조회하고 CSV로 내려받습니다.
 
 ## 3. 실행 명령 및 의존성
 - 의존성 설치: `npm install`
@@ -22,10 +24,13 @@
 
 - SUPABASE_URL: Supabase 프로젝트 URL
 - SUPABASE_KEY: Supabase 익명(anon) 퍼블릭 키
-- SUPABASE_SERVICE_ROLE_KEY: (선택) Supabase 관리자(service_role) 키. 홈페이지의 과정별 신청 인원 집계에만 사용, 절대 외부에 노출 금지
+- SUPABASE_SERVICE_ROLE_KEY: (필수) Supabase 서버 전용(service_role) 키. 신청 접수·신청 확인 조회·신청 인원 집계에 사용. 절대 외부에 노출 금지.
+  Netlify에서 Secret으로 표시하고 Scopes는 Functions, Deploy contexts는 Production만 선택한다(Deploy Preview·Branch deploy에서 쓰지 않게).
 - NAVER_CLIENT_ID: 네이버 지도 API 클라이언트 ID
-- TURNSTILE_SITE_KEY: (선택) Cloudflare Turnstile 사이트 키 (공개값, 신청서 로봇 확인 위젯)
-- TURNSTILE_SECRET: (선택) Cloudflare Turnstile 비밀 키. 없으면 로봇 확인을 하지 않는다
+- TURNSTILE_SITE_KEY: (필수) Cloudflare Turnstile 사이트 키 (공개값, 신청서 로봇 확인 위젯)
+- TURNSTILE_SECRET: (필수) Cloudflare Turnstile 비밀 키. 없으면 신청을 받지 않는다(확인 없이 통과시키지 않음)
+- TURNSTILE_DISABLED: (비상용) `true`로 두면 로봇 확인을 끈다. Cloudflare 장기 장애 등 비상시에만 쓰고 끝나면 지운다
+- TURNSTILE_HOSTNAMES: (선택) 로봇 확인 토큰을 받을 사이트 주소. 기본 `dcciedu.co.kr,www.dcciedu.co.kr`
 
 ## 5. 테스트 배포와 운영 배포 분리 (GitHub & Netlify 연동)
 잦은 코드 수정으로 인한 운영 크레딧 소모를 방지하려면 다음과 같이 환경을 분리하세요.
@@ -39,16 +44,19 @@
 - 비밀번호 변경은 Supabase SQL Editor에서 합니다. 실제 이메일·비밀번호는 저장소에 적지 않습니다.
 
 ## 6-2. 주요 기능과 SQL 파일
-- 신청 접수: `atomic_course_apply` (`sql/03`, `sql/06`, `sql/10`) — 정원·마감·입력값 검증, 반복 신청 제한, 서버 키로만 호출. 허니팟 + Turnstile 로봇 확인
-- 신청 확인(신청자용): `lookup_my_applications` (`sql/08`) — 성명·휴대폰·이메일 일치 시 과정명·일시만 반환
-- 관리자 규칙: `sql/05`(관리자만), `sql/07`(OTP 통과만), `sql/09`(신청 1건 삭제)
-- 개인정보 자동 파기: `purge_old_applications` (`sql/11`, 매월 1일 pg_cron)
+- 신청 접수: `atomic_course_apply` (`sql/06`, `sql/10`, `sql/12`) — 정원·마감·입력값 검증, 반복 신청 제한(잠금 후 계산), 서버 키로만 호출. 허니팟 + Turnstile 로봇 확인(호스트·action 확인, 확인 불가 시 거절)
+- 신청 확인(신청자용): `lookup_my_applications` (`sql/08`, `sql/12`, `sql/13`) — 성명·휴대폰·이메일 일치 시 과정명·일시만 반환. 본인 인증은 아님(세 가지를 아는 사람은 조회 가능)
+- 접근 규칙: `sql/12`가 courses·education_apply 규칙을 모두 지우고 관리자+OTP(aal2) 규칙만 다시 만든다(01·05·07·09의 규칙을 대체)
+- 과정 삭제: 신청자가 있으면 삭제 불가(서버 + `sql/12`의 ON DELETE RESTRICT)
+- 개인정보 자동 파기: `purge_old_applications` (`sql/12`) — 교육 종료일(`end_date`) + 1년 지난 신청만 삭제, 매월 1일 pg_cron. 종료일이 비어 있는 과정은 지우지 않으므로 관리자 페이지에서 종료일을 입력한다
+- 조회 기록 정리: `purge_lookup_log` (`sql/12`) — 하루 지난 조회 기록 삭제, 매일 pg_cron
+- 보안 상태 점검: `sql/check_security.sql`(읽기 전용) — 결과의 '확인 필요' 줄을 확인한다. 자동 실행 결과는 `sql/check_cron.sql`(읽기 전용)
 - 검색 노출: `public/robots.txt`(관리자·API 제외), `public/sitemap.xml`, 탭 아이콘 `public/favicon.ico`
 
 ## 6-3. 디자인 CSS 재생성 (Tailwind)
 외부 CDN을 쓰지 않고 `public/tailwind.css`를 미리 만들어 둡니다. HTML에 **새 Tailwind 클래스를 추가했을 때만** `site` 폴더에서 아래를 실행하고 결과 파일을 함께 커밋하세요.
 ```
-npx tailwindcss@3.4.19 --content "public/*.html" -o public/tailwind.css --minify
+npx tailwindcss@3.4.19 --content "public/*.html,public/admin.js" -o public/tailwind.css --minify
 ```
 JS에서 클래스 이름을 문자열로 이어 붙여 만들면(예: 'bg-' + 색) 생성되지 않으니, 클래스 이름은 항상 전체를 그대로 적습니다.
 
