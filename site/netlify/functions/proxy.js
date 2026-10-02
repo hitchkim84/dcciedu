@@ -26,8 +26,8 @@ if (supabaseUrl && supabaseServiceRoleKey) {
 }
 
 const CORS_HEADERS = {
-  'Access-Control-Allow-Credentials': true,
-  'Access-Control-Allow-Origin': '*',
+  // 홈페이지와 같은 주소에서만 호출하므로 다른 사이트의 호출은 허용하지 않는다.
+  'Access-Control-Allow-Origin': 'https://dcciedu.co.kr',
   'Access-Control-Allow-Methods': 'GET,OPTIONS,PATCH,DELETE,POST,PUT',
   'Access-Control-Allow-Headers': 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
 };

@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>개인정보 처리방침 - 대구상공회의소</title>
     <link rel="icon" href="/favicon.ico" sizes="any">
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 디자인(Tailwind)은 외부 CDN 대신 미리 만든 파일 사용. 새 클래스 추가 시 README의 재생성 명령 실행 -->
+    <link rel="stylesheet" href="/tailwind.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;700&display=swap');
         body { font-family: 'Noto Sans KR', sans-serif; }
@@ -70,11 +71,15 @@
                         <tr>
                             <td class="px-4 py-2 border-r">Supabase, Inc.</td>
                             <td class="px-4 py-2 border-r">교육 신청 정보 및 교육 과정 정보 데이터베이스 저장·관리</td>
-                            <td class="px-4 py-2" rowspan="2">위탁 계약 종료 시 또는 개인정보 보유 기간 만료 시까지</td>
+                            <td class="px-4 py-2" rowspan="3">위탁 계약 종료 시 또는 개인정보 보유 기간 만료 시까지</td>
                         </tr>
                         <tr>
                             <td class="px-4 py-2 border-r">Netlify, Inc.</td>
                             <td class="px-4 py-2 border-r">홈페이지 호스팅 및 교육 신청 처리 서버 운영</td>
+                        </tr>
+                        <tr>
+                            <td class="px-4 py-2 border-r">Cloudflare, Inc.</td>
+                            <td class="px-4 py-2 border-r">교육 신청 시 자동입력(로봇) 방지 확인 (접속 IP 등 기기 정보, 신청 내용은 제공하지 않음)</td>
                         </tr>
                     </tbody>
                 </table>

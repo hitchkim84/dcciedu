@@ -42,7 +42,15 @@
 - 신청 접수: `atomic_course_apply` (`sql/03`, `sql/06`, `sql/10`) — 정원·마감·입력값 검증, 반복 신청 제한, 서버 키로만 호출. 허니팟 + Turnstile 로봇 확인
 - 신청 확인(신청자용): `lookup_my_applications` (`sql/08`) — 성명·휴대폰·이메일 일치 시 과정명·일시만 반환
 - 관리자 규칙: `sql/05`(관리자만), `sql/07`(OTP 통과만), `sql/09`(신청 1건 삭제)
+- 개인정보 자동 파기: `purge_old_applications` (`sql/11`, 매월 1일 pg_cron)
 - 검색 노출: `public/robots.txt`(관리자·API 제외), `public/sitemap.xml`, 탭 아이콘 `public/favicon.ico`
+
+## 6-3. 디자인 CSS 재생성 (Tailwind)
+외부 CDN을 쓰지 않고 `public/tailwind.css`를 미리 만들어 둡니다. HTML에 **새 Tailwind 클래스를 추가했을 때만** `site` 폴더에서 아래를 실행하고 결과 파일을 함께 커밋하세요.
+```
+npx tailwindcss@3.4.19 --content "public/*.html" -o public/tailwind.css --minify
+```
+JS에서 클래스 이름을 문자열로 이어 붙여 만들면(예: 'bg-' + 색) 생성되지 않으니, 클래스 이름은 항상 전체를 그대로 적습니다.
 
 ## 6-1. 테스트 가이드
 - 별도의 테스트용 Supabase 프로젝트(무료)를 생성한 뒤, 위 '테스트 배포' 환경변수에 연결하여 모의 검증을 진행하는 것을 권장합니다.

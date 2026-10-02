@@ -2,8 +2,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 exports.handler = async function(event, context) {
   const headers = {
-    'Access-Control-Allow-Credentials': true,
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': 'https://dcciedu.co.kr',
     'Access-Control-Allow-Methods': 'GET,OPTIONS',
     'Access-Control-Allow-Headers': 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version',
     'Cache-Control': 's-maxage=86400, stale-while-revalidate=86400'
