@@ -24,6 +24,8 @@
 - SUPABASE_KEY: Supabase 익명(anon) 퍼블릭 키
 - SUPABASE_SERVICE_ROLE_KEY: (선택) Supabase 관리자(service_role) 키. 홈페이지의 과정별 신청 인원 집계에만 사용, 절대 외부에 노출 금지
 - NAVER_CLIENT_ID: 네이버 지도 API 클라이언트 ID
+- TURNSTILE_SITE_KEY: (선택) Cloudflare Turnstile 사이트 키 (공개값, 신청서 로봇 확인 위젯)
+- TURNSTILE_SECRET: (선택) Cloudflare Turnstile 비밀 키. 없으면 로봇 확인을 하지 않는다
 
 ## 5. 테스트 배포와 운영 배포 분리 (GitHub & Netlify 연동)
 잦은 코드 수정으로 인한 운영 크레딧 소모를 방지하려면 다음과 같이 환경을 분리하세요.
@@ -37,10 +39,18 @@
 - 비밀번호 변경은 Supabase SQL Editor에서 합니다. 실제 이메일·비밀번호는 저장소에 적지 않습니다.
 
 ## 6-2. 주요 기능과 SQL 파일
-- 신청 접수: `atomic_course_apply` (`sql/03`, `sql/06`) — 정원·마감·입력값 검증, 반복 신청 제한
+- 신청 접수: `atomic_course_apply` (`sql/03`, `sql/06`, `sql/10`) — 정원·마감·입력값 검증, 반복 신청 제한, 서버 키로만 호출. 허니팟 + Turnstile 로봇 확인
 - 신청 확인(신청자용): `lookup_my_applications` (`sql/08`) — 성명·휴대폰·이메일 일치 시 과정명·일시만 반환
 - 관리자 규칙: `sql/05`(관리자만), `sql/07`(OTP 통과만), `sql/09`(신청 1건 삭제)
+- 개인정보 자동 파기: `purge_old_applications` (`sql/11`, 매월 1일 pg_cron)
 - 검색 노출: `public/robots.txt`(관리자·API 제외), `public/sitemap.xml`, 탭 아이콘 `public/favicon.ico`
+
+## 6-3. 디자인 CSS 재생성 (Tailwind)
+외부 CDN을 쓰지 않고 `public/tailwind.css`를 미리 만들어 둡니다. HTML에 **새 Tailwind 클래스를 추가했을 때만** `site` 폴더에서 아래를 실행하고 결과 파일을 함께 커밋하세요.
+```
+npx tailwindcss@3.4.19 --content "public/*.html" -o public/tailwind.css --minify
+```
+JS에서 클래스 이름을 문자열로 이어 붙여 만들면(예: 'bg-' + 색) 생성되지 않으니, 클래스 이름은 항상 전체를 그대로 적습니다.
 
 ## 6-1. 테스트 가이드
 - 별도의 테스트용 Supabase 프로젝트(무료)를 생성한 뒤, 위 '테스트 배포' 환경변수에 연결하여 모의 검증을 진행하는 것을 권장합니다.

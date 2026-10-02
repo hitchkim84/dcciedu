@@ -23,7 +23,9 @@ function resetDb() {
     ]
   };
   outboundCalls = [];
+  outboundBodies = [];
   lookupCount = {};
+  lastRpcClientKey = null;
   viewExists = true;
 }
 
@@ -119,6 +121,7 @@ function raise(message) {
 }
 
 let lastRpcParams = null;
+let lastRpcClientKey = null;
 function atomicCourseApply(p) {
   lastRpcParams = p;
   const existing = db.education_apply.find(a => a.req_id === p.p_req_id);
@@ -158,7 +161,7 @@ function createClient(url, key, opts = {}) {
   const client = { key, headers: (opts.global && opts.global.headers) || {} };
   client.from = table => makeQuery(client, table);
   client.rpc = async (name, params) => {
-    if (name === 'atomic_course_apply') return atomicCourseApply(params);
+    if (name === 'atomic_course_apply') { lastRpcClientKey = client.key; return atomicCourseApply(params); }
     if (name === 'lookup_my_applications') return lookupMyApplications(params);
     return raise('unknown rpc');
   };
@@ -182,16 +185,22 @@ Module._load = function (request, parent, isMain) {
 };
 
 function loadHandler(env) {
-  for (const k of ['SUPABASE_URL', 'SUPABASE_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_SCRIPT_URL', 'APPS_SCRIPT_SECRET']) delete process.env[k];
+  for (const k of ['SUPABASE_URL', 'SUPABASE_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_SCRIPT_URL', 'APPS_SCRIPT_SECRET', 'TURNSTILE_SECRET']) delete process.env[k];
   Object.assign(process.env, { SUPABASE_URL: 'https://example.supabase.co', SUPABASE_KEY: 'anon' }, env);
   delete require.cache[require.resolve(PROXY_PATH)];
   return require(PROXY_PATH).handler;
 }
 
 // 신청 정보는 DB에만 저장해야 하므로 외부로 나가는 요청은 모두 기록해 검사한다.
-global.fetch = async (url) => {
+// Turnstile 확인 요청만 허용되며, 토큰이 'good-token'이면 성공, 'down'이면 장애로 흉내낸다.
+let outboundBodies = [];
+global.fetch = async (url, init = {}) => {
   outboundCalls.push(String(url));
-  return { ok: true, status: 200, text: async () => '{}' };
+  const body = init.body ? Object.fromEntries(new URLSearchParams(init.body.toString())) : {};
+  outboundBodies.push(body);
+  if (body.response === 'down') throw new Error('ECONNRESET');
+  const success = body.response === 'good-token';
+  return { ok: true, status: 200, json: async () => ({ success }), text: async () => JSON.stringify({ success }) };
 };
 
 function applyForm(overrides = {}) {
@@ -367,6 +376,55 @@ test('lookup id and password hash are not stored', async () => {
   assert.strictEqual(res.statusCode, 200);
   assert.strictEqual(lastRpcParams.p_lookup_id, null);
   assert.strictEqual(lastRpcParams.p_lookup_password_hash, null);
+});
+
+// ---- Bot protection (honeypot + Turnstile) -------------------------------
+test('honeypot field filled by a bot is rejected without saving', async () => {
+  const handler = loadHandler();
+  const res = await call(handler, { method: 'POST', body: applyForm({ website: 'http://spam.example' }) });
+  assert.strictEqual(res.statusCode, 400);
+  assert.strictEqual(db.education_apply.length, 1);
+});
+
+test('without TURNSTILE_SECRET the captcha is not required (safe before keys are set)', async () => {
+  const handler = loadHandler();
+  const res = await call(handler, { method: 'POST', body: applyForm() });
+  assert.strictEqual(res.statusCode, 200);
+  assert.deepStrictEqual(outboundCalls, []);
+});
+
+test('with TURNSTILE_SECRET: missing or failed captcha is rejected, valid captcha is saved', async () => {
+  const handler = loadHandler({ TURNSTILE_SECRET: 'ts-secret' });
+  assert.strictEqual((await call(handler, { method: 'POST', body: applyForm() })).statusCode, 400);
+  assert.strictEqual((await call(handler, { method: 'POST', body: applyForm({ captcha: 'bad-token' }) })).statusCode, 400);
+  assert.strictEqual(db.education_apply.length, 1);
+  const ok = await call(handler, { method: 'POST', body: applyForm({ captcha: 'good-token' }) });
+  assert.strictEqual(ok.statusCode, 200, ok.body);
+  assert.strictEqual(db.education_apply.length, 2);
+});
+
+test('captcha check sends only the token (no personal data) to Cloudflare', async () => {
+  const handler = loadHandler({ TURNSTILE_SECRET: 'ts-secret' });
+  await call(handler, { method: 'POST', body: applyForm({ captcha: 'good-token' }) });
+  assert.deepStrictEqual(outboundCalls, ['https://challenges.cloudflare.com/turnstile/v0/siteverify']);
+  assert.deepStrictEqual(Object.keys(outboundBodies[0]).sort(), ['response', 'secret']);
+  assert.doesNotMatch(JSON.stringify(outboundBodies), /홍길동|010|hong@|대구상사/);
+});
+
+test('Cloudflare outage does not stop applications (fail-open on network error)', async () => {
+  const handler = loadHandler({ TURNSTILE_SECRET: 'ts-secret' });
+  const res = await call(handler, { method: 'POST', body: applyForm({ captcha: 'down' }) });
+  assert.strictEqual(res.statusCode, 200);
+});
+
+test('applications use the server-only key when it is configured', async () => {
+  let handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  await call(handler, { method: 'POST', body: applyForm() });
+  assert.strictEqual(lastRpcClientKey, 'service');
+  resetDb(); lastRpcClientKey = null;
+  handler = loadHandler();
+  await call(handler, { method: 'POST', body: applyForm() });
+  assert.strictEqual(lastRpcClientKey, 'anon');
 });
 
 // ---- Admin: delete one application ---------------------------------------
