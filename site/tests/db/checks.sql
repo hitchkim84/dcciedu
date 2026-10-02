@@ -43,7 +43,9 @@ BEGIN
   r := pg_temp.as_role('authenticated', staff2, 'SELECT count(*) FROM public.education_apply');
   IF r = 'rows=0' OR r LIKE 'error%' THEN RAISE EXCEPTION '일반관리자 aal2 조회: %', r; END IF;
   r := pg_temp.as_role('authenticated', staff1, 'SELECT count(*) FROM public.education_apply');
-  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 aal1 조회: %', r; END IF;
+  IF r = 'rows=0' OR r LIKE 'error%' THEN RAISE EXCEPTION '일반관리자 OTP 없이 조회: %', r; END IF;
+  r := pg_temp.as_role('authenticated', staff1, 'WITH x AS (DELETE FROM public.education_apply RETURNING 1) SELECT count(*) FROM x');
+  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 OTP 없이 삭제: %', r; END IF;
   r := pg_temp.as_role('authenticated', staff2, 'WITH x AS (DELETE FROM public.education_apply RETURNING 1) SELECT count(*) FROM x');
   IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 신청 삭제: %', r; END IF;
   r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.education_apply SET status = 'x' RETURNING 1) SELECT count(*) FROM x$q$);
@@ -52,7 +54,7 @@ BEGIN
   IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 과정 수정: %', r; END IF;
   r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (INSERT INTO public.courses (title) VALUES ('s') RETURNING 1) SELECT count(*) FROM x$q$);
   IF r <> 'error=42501' THEN RAISE EXCEPTION '일반관리자 과정 등록: %', r; END IF;
-  RAISE NOTICE '일반관리자: OTP 통과 시 명단 조회만 가능, aal1은 0건, 신청·과정 수정·삭제·등록 불가';
+  RAISE NOTICE '일반관리자: OTP 없이 명단 조회만 가능, 신청·과정 수정·삭제·등록 불가 (슈퍼관리자 aal1은 계속 0건)';
 
   -- 접속 기록: 관리자·일반관리자·비로그인 모두 API로 읽기·쓰기 불가, 서버 키만 기록
   r := pg_temp.as_role('authenticated', aal2, 'SELECT count(*) FROM public.admin_access_log');

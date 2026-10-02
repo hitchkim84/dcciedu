@@ -9,7 +9,7 @@ let sessionToken = null; // JWT Access Token
 let allCourses = {}; // 데이터 저장용
 let statusCourses = []; // 신청자 현황 (명단 표/CSV용)
 let editingCourseId = null; // 현재 수정 중인 ID
-// 관리자 등급: admin = 슈퍼관리자(모든 기능), staff = 일반관리자(명단 보기·엑셀 다운로드만)
+// 관리자 등급: admin = 슈퍼관리자(모든 기능, OTP 필수), staff = 일반관리자(명단 보기·엑셀 다운로드만, OTP 없음)
 // 화면에서는 버튼만 숨기고, 실제 차단은 서버(proxy.js)와 DB 규칙(sql/14)이 한다.
 const ROLE_LABELS = { admin: '슈퍼관리자', staff: '일반관리자' };
 let currentRole = null;
@@ -66,8 +66,9 @@ function applySession(session) {
         supabaseClient.auth.signOut();
         return;
     }
-    // 비밀번호만 통과한 상태(aal1)면 명단을 보여주지 않고 OTP 단계로 보낸다.
-    if (session && jwtClaims(session.access_token).aal !== 'aal2') {
+    // 슈퍼관리자가 비밀번호만 통과한 상태(aal1)면 명단을 보여주지 않고 OTP 단계로 보낸다.
+    // 일반관리자(staff)는 OTP 없이 들어간다(조회·엑셀만 가능, 서버·DB에서도 같은 기준).
+    if (session && session.user.app_metadata.role === 'admin' && jwtClaims(session.access_token).aal !== 'aal2') {
         sessionToken = null;
         document.getElementById('admin-content').classList.add('hidden');
         document.getElementById('login-modal').classList.remove('hidden');
@@ -229,6 +230,7 @@ function switchTab(tabId) {
         const btn = document.getElementById('tab-' + id);
         if (btn) {
             btn.className = "py-2 px-4 text-gray-500 font-medium hover:text-gray-700 focus:outline-none transition-colors";
+            if (id !== 'status' && !isSuperAdmin()) btn.classList.add('hidden'); // 일반관리자는 탭 숨김 유지
             btn.classList.remove('border-b-2', 'border-blue-600', 'text-blue-600', 'font-bold');
         }
         const section = document.getElementById('section-' + id);

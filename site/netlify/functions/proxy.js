@@ -328,7 +328,7 @@ function courseFields(reqBody) {
   };
 }
 
-// 관리자 등급: admin = 슈퍼관리자(모든 기능), staff = 일반관리자(명단 보기·엑셀 다운로드만)
+// 관리자 등급: admin = 슈퍼관리자(모든 기능, OTP 필수), staff = 일반관리자(명단 보기·엑셀 다운로드만, OTP 없음)
 // DB 규칙(sql/14)도 같은 기준으로 한 번 더 막는다.
 const ADMIN_ROLES = ['admin', 'staff'];
 const STAFF_ACTIONS = ['log_csv'];
@@ -393,8 +393,8 @@ exports.handler = async function(event, context) {
     }
     adminUser = user;
 
-    // 비밀번호만 통과한 로그인(aal1)은 거절하고, OTP까지 통과한 로그인(aal2)만 허용한다.
-    if (jwtClaims(token).aal !== 'aal2') {
+    // 슈퍼관리자는 OTP까지 통과한 로그인(aal2)만 허용한다. 일반관리자는 OTP 없이 조회만 할 수 있다(sql/14).
+    if (adminRole === 'admin' && jwtClaims(token).aal !== 'aal2') {
       return jsonRes(403, { result: 'error', msg: '2단계 인증(OTP)이 필요합니다.' });
     }
 

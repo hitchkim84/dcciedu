@@ -670,13 +670,15 @@ function seedApps() {
   IDS.forEach((id, i) => db.education_apply.push({ id, course_id: COURSE_ID, req_id: 'r' + i, name: '시험' + i, company: 'C', email: 'e@e', phone: '010', agree_privacy: true }));
 }
 
-test('staff (OTP) can view the applicant list; staff without OTP cannot', async () => {
+test('staff can view the applicant list without OTP; super admin still needs OTP', async () => {
   const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
-  const ok = await call(handler, { type: 'admin', token: STAFF_TOKEN });
+  const ok = await call(handler, { type: 'admin', token: STAFF_AAL1_TOKEN });
   assert.strictEqual(ok.statusCode, 200, ok.body);
   assert.strictEqual(ok.json[FULL_ID].applicants.length, 1);
-  const aal1 = await call(handler, { type: 'admin', token: STAFF_AAL1_TOKEN });
-  assert.strictEqual(aal1.statusCode, 403);
+  const admin1 = await call(handler, { type: 'admin', token: ADMIN_AAL1_TOKEN });
+  assert.strictEqual(admin1.statusCode, 403);
+  const del = await call(handler, { method: 'POST', type: 'admin', token: STAFF_AAL1_TOKEN, body: A({ action: 'delete_application', id: 'a-full' }) });
+  assert.strictEqual(del.statusCode, 403);
 });
 
 test('staff cannot change anything (courses, deletes, bulk delete)', async () => {
