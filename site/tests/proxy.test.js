@@ -369,6 +369,33 @@ test('lookup id and password hash are not stored', async () => {
   assert.strictEqual(lastRpcParams.p_lookup_password_hash, null);
 });
 
+// ---- Admin: delete one application ---------------------------------------
+test('OTP admin can delete one application; others cannot', async () => {
+  const handler = loadHandler();
+  const body = id => new URLSearchParams({ action: 'delete_application', id }).toString();
+  db.education_apply[0].id = '33333333-3333-4333-8333-333333333333';
+  const id = db.education_apply[0].id;
+
+  assert.strictEqual((await call(handler, { method: 'POST', body: body(id) })).statusCode, 403); // 공개 경로
+  assert.strictEqual((await call(handler, { method: 'POST', type: 'admin', token: USER_TOKEN, body: body(id) })).statusCode, 403);
+  assert.strictEqual((await call(handler, { method: 'POST', type: 'admin', token: ADMIN_AAL1_TOKEN, body: body(id) })).statusCode, 403);
+  assert.strictEqual((await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: body('not-a-uuid') })).statusCode, 400);
+  assert.strictEqual(db.education_apply.length, 1);
+
+  const ok = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: body(id) });
+  assert.strictEqual(ok.statusCode, 200, ok.body);
+  assert.strictEqual(db.education_apply.length, 0);
+
+  const again = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: body(id) });
+  assert.strictEqual(again.statusCode, 403);
+});
+
+test('admin applicant list includes the application id for deletion', async () => {
+  const handler = loadHandler();
+  const res = await call(handler, { type: 'admin', token: ADMIN_TOKEN });
+  assert.strictEqual(res.json[FULL_ID].applicants[0].id, 'a-full');
+});
+
 // ---- Applicant self lookup ------------------------------------------------
 function lookupForm(overrides = {}) {
   return new URLSearchParams({ action: 'lookup', name: '홍길동', phone: '010-1234-5678', email: 'HONG@example.com', ...overrides }).toString();

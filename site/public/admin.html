@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>관리자 페이지 - 교육 과정 등록</title>
+    <link rel="icon" href="/favicon.ico" sizes="any">
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Supabase 라이브러리는 외부 CDN 대신 사이트에서 직접 제공 (버전 고정). 업데이트 시 vendor 파일 교체 -->
     <script src="/vendor/supabase-js-2.117.2.min.js"></script>
@@ -656,6 +657,33 @@
                 .catch(err => handleError(tbody, err));
         }
 
+        // 신청 1건 삭제: 확인 창을 거친 뒤 서버에 요청 (OTP 통과 관리자만 가능)
+        function deleteApplication(btn) {
+            const id = btn.dataset.id;
+            if (!id) return;
+            if (!confirm(`이 신청을 삭제하시겠습니까?\n\n성명: ${btn.dataset.name}\n회사: ${btn.dataset.company}\n\n삭제 후에는 복구할 수 없습니다.`)) return;
+            btn.disabled = true;
+            fetch(scriptURL + '?type=admin', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Authorization': 'Bearer ' + sessionToken
+                },
+                body: new URLSearchParams({ action: 'delete_application', id })
+            })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.result === 'success') {
+                        alert('🗑️ 삭제되었습니다.');
+                        fetchStatus();
+                    } else {
+                        alert('⛔ 삭제 실패: ' + result.msg);
+                        btn.disabled = false;
+                    }
+                })
+                .catch(err => { alert('오류 발생: ' + err); btn.disabled = false; });
+        }
+
         // 신청자/과정 입력값을 화면에 넣을 때는 반드시 이 함수로 감싼다 (HTML 주입 방지)
         function escapeHtml(value) {
             return String(value === undefined || value === null ? '' : value)
@@ -681,11 +709,14 @@
                 return '<p class="text-sm text-gray-500 py-2">신청자가 없습니다.</p>';
             }
             const head = APPLICANT_COLUMNS.map(([, label]) =>
-                `<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">${label}</th>`).join('');
+                `<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">${label}</th>`).join('')
+                + '<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">관리</th>';
             const rows = apps.map((app, i) => `
                 <tr class="border-t">
                     <td class="px-3 py-2 text-xs text-gray-500">${i + 1}</td>
                     ${APPLICANT_COLUMNS.map(([key]) => `<td class="px-3 py-2 text-sm text-gray-800">${escapeHtml(app[key])}</td>`).join('')}
+                    <td class="px-3 py-2"><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
+                        onclick="deleteApplication(this)" class="px-2 py-1 text-xs font-bold text-red-600 border border-red-300 rounded hover:bg-red-50">삭제</button></td>
                 </tr>`).join('');
             return `
                 <div class="flex justify-between items-center mb-2">
