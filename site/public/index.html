@@ -4,7 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>대구상공회의소 교육신청</title>
+    <title>대구상공회의소 교육센터 | 교육신청</title>
+    <meta name="description" content="대구상공회의소 교육센터. 실무자 역량강화, 재직자 AI, FTA 실무 교육 일정을 확인하고 온라인으로 신청하세요.">
+    <link rel="canonical" href="https://dcciedu.co.kr/">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
     <meta property="og:type" content="website">
     <meta property="og:title" content="대구상공회의소 교육신청 홈페이지">
@@ -951,7 +956,8 @@
                 const result = await response.json();
 
                 if (result.result === 'success') {
-                    alert(`[신청 완료]\n정상적으로 접수되었습니다.\n담당자가 확인 후 안내해 드리겠습니다.`);
+                    const appliedTitle = document.getElementById('modalCourseTitle').value;
+                    alert(`[신청 완료]\n「${appliedTitle}」 과정에 정상적으로 접수되었습니다.\n담당자가 확인 후 안내해 드리겠습니다.\n\n접수 내역은 홈페이지 상단 '신청 확인'에서\n성명·휴대폰·이메일로 언제든 확인할 수 있습니다.`);
                     closeModal();
 
                     // Navigate to the category page containing the course
