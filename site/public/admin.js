@@ -16,6 +16,46 @@ let currentRole = null;
 // 일반관리자 아이디는 이 주소를 붙여 로그인한다(Supabase 계정 이메일: 아이디@staff.dcciedu.co.kr)
 const STAFF_ID_DOMAIN = 'staff.dcciedu.co.kr';
 
+// --- "이 PC 기억" (슈퍼관리자 OTP 입력 횟수 줄이기) ---
+// 기본: 로그인 정보는 이 탭에만 보관(sessionStorage). 탭을 닫으면 사라지고 다른 탭과 공유하지 않는다.
+// OTP 화면에서 "이 PC 기억"을 체크하면 30일 동안 이 브라우저(localStorage)에 보관해 탭을 다시 열어도 OTP를 묻지 않는다.
+// 회사 PC에서만 체크한다. 로그아웃하거나 30일이 지나면 기억을 지우고(서버 재발급 토큰도 폐기) 다시 OTP를 묻는다.
+const TRUST_KEY = 'dcciedu-admin-trusted-until';
+const TRUST_DAYS = 30;
+let purgingTrust = false; // 기억 기간이 끝난 로그인 정보를 지우는 중
+function trustedUntil() {
+    try { return Number(localStorage.getItem(TRUST_KEY)) || 0; } catch (e) { return 0; }
+}
+function isTrustedPc() {
+    return trustedUntil() > Date.now();
+}
+function authStore() {
+    return (isTrustedPc() || purgingTrust) ? localStorage : sessionStorage;
+}
+const authStorage = {
+    getItem: k => authStore().getItem(k),
+    setItem: (k, v) => authStore().setItem(k, v),
+    removeItem: k => { localStorage.removeItem(k); sessionStorage.removeItem(k); }
+};
+function forgetThisPc() {
+    try {
+        localStorage.removeItem(TRUST_KEY);
+        Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k));
+    } catch (e) { /* 저장소를 못 쓰는 브라우저는 무시 */ }
+}
+// OTP 통과 직후 호출: 지금 탭의 로그인 정보를 이 PC(localStorage)로 옮긴다.
+function rememberThisPc() {
+    try {
+        Object.keys(sessionStorage).filter(k => k.startsWith('sb-')).forEach(k => {
+            localStorage.setItem(k, sessionStorage.getItem(k));
+            sessionStorage.removeItem(k);
+        });
+        localStorage.setItem(TRUST_KEY, String(Date.now() + TRUST_DAYS * 24 * 60 * 60 * 1000));
+    } catch (e) {
+        alert('이 브라우저에서는 "이 PC 기억"을 쓸 수 없습니다. 이번 탭에서만 로그인이 유지됩니다.');
+    }
+}
+
 // Initialize Supabase and check session on load
 async function initSupabase() {
     try {
@@ -25,10 +65,18 @@ async function initSupabase() {
             throw new Error("Supabase configuration is missing on the server.");
         }
 
-        // 로그인 정보는 이 탭에만 보관(sessionStorage). 탭을 닫으면 사라지고 다른 탭·홈페이지 화면과 공유하지 않는다.
+        // 로그인 정보 보관 위치는 위 authStorage가 정한다(기본 이 탭, "이 PC 기억" 시 30일 동안 이 브라우저).
         supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseKey, {
-            auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
+            auth: { storage: authStorage, persistSession: true, autoRefreshToken: true }
         });
+
+        // 기억 기간(30일)이 끝났으면 남은 로그인을 서버에서도 끊고 지운다.
+        if (trustedUntil() && !isTrustedPc()) {
+            purgingTrust = true;
+            try { await supabaseClient.auth.signOut(); } catch (e) { /* 이미 만료된 경우 */ }
+            purgingTrust = false;
+            forgetThisPc();
+        }
 
         // Listen to auth state changes
         // 콜백 안에서 Supabase 함수를 바로 부르면 멈출 수 있어 다음 차례로 미룬다.
@@ -114,6 +162,7 @@ function isSuperAdmin() {
 window.onload = initSupabase;
 
 function hideMfa() {
+    document.getElementById('mfa-remember').checked = false;
     mfaFactorId = null;
     document.getElementById('mfa-panel').classList.add('hidden');
     document.getElementById('mfa-enroll').classList.add('hidden');
@@ -172,6 +221,7 @@ async function verifyMfa() {
     try {
         const { error } = await supabaseClient.auth.mfa.challengeAndVerify({ factorId: mfaFactorId, code });
         if (error) throw error;
+        if (document.getElementById('mfa-remember').checked) rememberThisPc();
         const { data: { session } } = await supabaseClient.auth.getSession();
         applySession(session);
     } catch (err) {
@@ -217,10 +267,12 @@ async function tryLogin() {
 }
 
 // Logout Handler
+// 로그아웃하면 "이 PC 기억"도 함께 지운다(다음 로그인 때 OTP를 다시 묻는다).
 async function logout() {
     if (supabaseClient) {
         await supabaseClient.auth.signOut();
     }
+    forgetThisPc();
 }
 
 function switchTab(tabId) {
@@ -764,17 +816,21 @@ document.getElementById('login-form').addEventListener('submit', e => { e.preven
 document.getElementById('mfa-panel').addEventListener('submit', e => { e.preventDefault(); verifyMfa(); });
 
 // --- 자리 비움 자동 로그아웃 ---
-// 30분 동안 마우스·키보드 조작이 없으면 로그아웃한다(서버에 저장된 재발급 토큰도 폐기).
+// 관리자 화면을 열어 둔 채 조작이 없으면 로그아웃한다(서버에 저장된 재발급 토큰도 폐기).
+// 기본 30분, "이 PC 기억"을 켠 PC는 4시간. 탭을 닫아 두는 시간은 세지 않는다.
 // 참고: 이미 발급된 접속 토큰(JWT)은 만료 시각(Supabase 기본 1시간)까지 서버에서 유효할 수 있다.
 const IDLE_LIMIT_MS = 30 * 60 * 1000;
+const IDLE_LIMIT_TRUSTED_MS = 4 * 60 * 60 * 1000;
 let lastActivity = Date.now();
 ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'].forEach(ev =>
     document.addEventListener(ev, () => { lastActivity = Date.now(); }, { passive: true }));
 function checkIdle() {
     const loggedIn = sessionToken || !document.getElementById('mfa-panel').classList.contains('hidden');
-    if (!loggedIn || Date.now() - lastActivity < IDLE_LIMIT_MS) return;
+    const limit = isTrustedPc() ? IDLE_LIMIT_TRUSTED_MS : IDLE_LIMIT_MS;
+    if (!loggedIn || Date.now() - lastActivity < limit) return;
     lastActivity = Date.now();
-    logout().finally(() => alert('30분 동안 사용하지 않아 자동으로 로그아웃되었습니다.'));
+    const label = isTrustedPc() ? '4시간' : '30분';
+    logout().finally(() => alert(`${label} 동안 사용하지 않아 자동으로 로그아웃되었습니다.`));
 }
 setInterval(checkIdle, 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkIdle(); });

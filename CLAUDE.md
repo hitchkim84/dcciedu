@@ -23,7 +23,7 @@
 - 과정 삭제: 신청자가 있는 과정은 삭제할 수 없다(서버 확인 + DB `ON DELETE RESTRICT`, `sql/12`).
 - 개인정보 파기: 교육 종료일(`courses.end_date`) + 1년이 지난 신청은 `purge_old_applications()`가 매월 자동 삭제(`sql/12`, pg_cron). 종료일이 없는 과정은 지우지 않으므로 관리자가 종료일을 입력한다. 자동 실행 성공 여부는 `sql/check_cron.sql`(읽기 전용)로 확인한다. 삭제 테스트는 운영 DB가 아닌 임시 DB(`tests/db/run.sh`)에서 한다.
 - 외부 스크립트 금지: 디자인은 `public/tailwind.css`(미리 생성)만 쓴다. 관리자 페이지는 CSP로 외부·인라인 스크립트를 모두 막는다(코드는 `public/admin.js`, 버튼은 `data-action`으로 연결, onclick 금지). 홈페이지도 CSP로 허용한 외부 주소(Cloudflare·네이버 지도·글꼴)만 쓴다. 새 외부 주소가 필요하면 `netlify.toml` CSP에 추가.
-- 관리자 로그인 정보는 브라우저 탭 안(sessionStorage)에만 두고, 30분 동안 조작이 없으면 자동 로그아웃한다.
+- 관리자 로그인 정보는 기본으로 브라우저 탭 안(sessionStorage)에만 두고, 30분 동안 조작이 없으면 자동 로그아웃한다. 슈퍼관리자가 OTP 화면에서 "이 PC 기억"을 체크하면 30일 동안 그 브라우저(localStorage)에 두어 OTP를 다시 묻지 않고, 자리 비움 로그아웃은 4시간으로 한다(2026-10 결정: OTP 입력 부담). 회사 PC에서만 체크하고, 로그아웃하거나 30일이 지나면 기억을 지우고 서버 세션도 끊는다.
 - `SUPABASE_SERVICE_ROLE_KEY`·`TURNSTILE_SECRET`은 Netlify에서 Production 배포에만 쓰이게 한다(Deploy Preview 제외). 공개 저장소라 외부인의 PR 미리보기가 비밀값을 읽을 수 있기 때문.
 - API CORS는 `https://dcciedu.co.kr`만 허용한다.
 
