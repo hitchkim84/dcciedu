@@ -31,9 +31,9 @@
 - TURNSTILE_SECRET: (필수) Cloudflare Turnstile 비밀 키. 없으면 신청을 받지 않는다(확인 없이 통과시키지 않음)
 - TURNSTILE_DISABLED: (비상용) `true`로 두면 로봇 확인을 끈다. Cloudflare 장기 장애 등 비상시에만 쓰고 끝나면 지운다
 - TURNSTILE_HOSTNAMES: (선택) 로봇 확인 토큰을 받을 사이트 주소. 기본 `dcciedu.co.kr,www.dcciedu.co.kr`
-- SOLAPI_API_KEY, SOLAPI_API_SECRET: (선택) 솔라피 API 키. 신청 접수 안내 알림톡 발송용. 없으면 알림톡을 보내지 않는다(신청은 정상). Secret 표시, Production에만 값
-- SOLAPI_PFID: (선택) 솔라피에 연결한 카카오톡 채널의 발신 프로필 ID
-- SOLAPI_TEMPLATE_ID: (선택) 승인된 알림톡 템플릿 ID. 템플릿 변수는 `#{이름}`, `#{과정명}`, `#{교육일시}`, `#{장소}`
+- SOLAPI_API_KEY, SOLAPI_API_SECRET: (선택) 솔라피 API 키. 신청 접수 안내 알림톡 발송용. 없으면 알림톡을 보내지 않는다(신청은 정상). Secret 표시, Production에만 값. 키 만료 365일(2026-10 발급) → 만료 전 새 키로 바꾸고 재배포(IP 제한은 '모든 IP 허용': Netlify 서버 IP가 고정되지 않음)
+- SOLAPI_PFID: (선택) 솔라피에 연결한 카카오톡 채널의 발신 프로필 ID(`KA01PF`로 시작)
+- SOLAPI_TEMPLATE_ID: (선택) 승인된 알림톡 템플릿 ID(`KA01TP`로 시작, 카카오 '템플릿 코드'가 아님). 템플릿 변수는 `#{이름}`, `#{과정명}`, `#{교육일시}`, `#{장소}`
 - SOLAPI_SENDER: (선택) 솔라피에 등록한 발신번호. 있으면 알림톡 실패 시 문자로 대신 보낸다(문자 요금 별도)
 
 ## 5. 테스트 배포와 운영 배포 분리 (GitHub & Netlify 연동)
