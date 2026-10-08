@@ -26,6 +26,8 @@ function resetDb() {
   };
   outboundCalls = [];
   outboundBodies = [];
+  solapiMode = 'ok';
+  solapiRequests = [];
   lookupCount = {};
   lastRpcClientKey = null;
   lastLookupClientKey = null;
@@ -202,7 +204,8 @@ Module._load = function (request, parent, isMain) {
 
 function loadHandler(env) {
   for (const k of ['SUPABASE_URL', 'SUPABASE_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_SCRIPT_URL', 'APPS_SCRIPT_SECRET',
-    'TURNSTILE_SECRET', 'TURNSTILE_DISABLED', 'TURNSTILE_HOSTNAMES']) delete process.env[k];
+    'TURNSTILE_SECRET', 'TURNSTILE_DISABLED', 'TURNSTILE_HOSTNAMES',
+    'SOLAPI_API_KEY', 'SOLAPI_API_SECRET', 'SOLAPI_PFID', 'SOLAPI_TEMPLATE_ID', 'SOLAPI_SENDER']) delete process.env[k];
   // 운영과 같이 로봇 확인 키가 있는 상태가 기본. env에 undefined를 주면 그 값은 없는 상태로 테스트한다.
   const merged = { SUPABASE_URL: 'https://example.supabase.co', SUPABASE_KEY: 'anon', TURNSTILE_SECRET: 'ts-secret', ...env };
   for (const [k, v] of Object.entries(merged)) if (v !== undefined) process.env[k] = v;
@@ -215,8 +218,17 @@ function loadHandler(env) {
 //   good-token: 성공(dcciedu.co.kr, action=apply) / other-host: 다른 사이트에서 발급 / other-action: 다른 화면에서 발급
 //   down: 계속 장애 / flaky: 첫 시도만 장애 / 그 밖: 실패
 let outboundBodies = [];
+// 솔라피(알림톡) 가짜 응답: solapiMode = 'ok' | 'fail'(HTTP 500) | 'throw'(연결 실패)
+let solapiMode = 'ok';
+let solapiRequests = [];
 global.fetch = async (url, init = {}) => {
   outboundCalls.push(String(url));
+  if (String(url).startsWith('https://api.solapi.com/')) {
+    solapiRequests.push({ headers: init.headers, body: JSON.parse(init.body) });
+    if (solapiMode === 'throw') throw new Error('ECONNRESET');
+    const status = solapiMode === 'fail' ? 500 : 200;
+    return { ok: status === 200, status, json: async () => ({}), text: async () => '{}' };
+  }
   const body = init.body ? Object.fromEntries(new URLSearchParams(init.body.toString())) : {};
   outboundBodies.push(body);
   if (body.response === 'down') throw new Error('ECONNRESET');
@@ -742,4 +754,59 @@ test('CSV download is refused when the access log cannot be written', async () =
   const res = await call(handler, { method: 'POST', type: 'admin', token: STAFF_TOKEN, body: A({ action: 'log_csv', course_id: COURSE_ID, count: '1' }) });
   assert.strictEqual(res.statusCode, 500);
   assert.match(res.json.msg, /다운로드/);
+});
+
+// ---- 신청 접수 알림톡 (솔라피) -------------------------------------------
+const SOLAPI_ENV = { SUPABASE_SERVICE_ROLE_KEY: 'service', SOLAPI_API_KEY: 'k', SOLAPI_API_SECRET: 's', SOLAPI_PFID: 'pf', SOLAPI_TEMPLATE_ID: 'tpl' };
+
+test('alimtalk: sent once after a new application, with only name/phone/course info', async () => {
+  db.courses[0].date = '2026. 12. 23(수) 09:30~12:30';
+  db.courses[0].place = '본관 2층';
+  const handler = loadHandler(SOLAPI_ENV);
+  const res = await call(handler, { method: 'POST', body: applyForm() });
+  assert.strictEqual(res.statusCode, 200, res.body);
+  assert.strictEqual(solapiRequests.length, 1);
+  const m = solapiRequests[0].body.message;
+  assert.strictEqual(m.to, '01012345678');
+  assert.strictEqual(m.kakaoOptions.pfId, 'pf');
+  assert.strictEqual(m.kakaoOptions.templateId, 'tpl');
+  assert.strictEqual(m.kakaoOptions.disableSms, true); // 발신번호 없으면 문자 대체 안 함
+  assert.deepStrictEqual(m.kakaoOptions.variables, { '#{이름}': '홍길동', '#{과정명}': '세무회계 실무', '#{교육일시}': '2026. 12. 23(수) 09:30~12:30', '#{장소}': '본관 2층' });
+  assert.doesNotMatch(JSON.stringify(solapiRequests[0].body), /대구상사|123-45|hong@|총무팀/); // 회사·사업자번호·이메일·부서는 안 보냄
+  assert.match(solapiRequests[0].headers.Authorization, /^HMAC-SHA256 apiKey=k, date=.+, salt=[0-9a-f]{32}, signature=[0-9a-f]{64}$/);
+});
+
+test('alimtalk: not sent again when the same application is resubmitted', async () => {
+  const handler = loadHandler(SOLAPI_ENV);
+  await call(handler, { method: 'POST', body: applyForm() });
+  const again = await call(handler, { method: 'POST', body: applyForm() });
+  assert.strictEqual(again.statusCode, 200);
+  assert.strictEqual(solapiRequests.length, 1);
+});
+
+test('alimtalk: failures never break the application', async () => {
+  for (const mode of ['fail', 'throw']) {
+    resetDb(); solapiMode = mode;
+    const handler = loadHandler(SOLAPI_ENV);
+    const res = await call(handler, { method: 'POST', body: applyForm() });
+    assert.strictEqual(res.statusCode, 200, mode);
+    assert.strictEqual(db.education_apply.length, 2, mode);
+  }
+});
+
+test('alimtalk: not sent when keys are missing, or when the application is rejected', async () => {
+  let handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  assert.strictEqual((await call(handler, { method: 'POST', body: applyForm() })).statusCode, 200);
+  assert.strictEqual(solapiRequests.length, 0);
+  handler = loadHandler(SOLAPI_ENV);
+  assert.strictEqual((await call(handler, { method: 'POST', body: applyForm({ course_id: FULL_ID }) })).statusCode, 400);
+  assert.strictEqual(solapiRequests.length, 0);
+});
+
+test('alimtalk: SMS fallback only when a sender number is set', async () => {
+  const handler = loadHandler({ ...SOLAPI_ENV, SOLAPI_SENDER: '053-222-3109' });
+  await call(handler, { method: 'POST', body: applyForm() });
+  const m = solapiRequests[0].body.message;
+  assert.strictEqual(m.from, '0532223109');
+  assert.strictEqual(m.kakaoOptions.disableSms, false);
 });
