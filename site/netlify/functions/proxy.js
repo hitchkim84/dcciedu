@@ -124,6 +124,8 @@ function mapCourse(course, current) {
     contact: course.contact || "",
     cost: cost,
     paymentInfo: paymentInfo,
+    memberFee: course.member_fee ?? null,
+    nonmemberFee: course.nonmember_fee ?? null,
     otherInfo: course.other_info || "",
     current: current
   };
@@ -273,6 +275,10 @@ async function handleApply(reqBody, clientIp) {
     return jsonRes(400, { result: 'error', msg: '연락처를 정확히 입력해주세요.' });
   }
   const bizNo = str(reqBody.bizNo);
+  // 사업자등록번호는 필수(숫자 10자리). 회원사 교육비 판별 기준이다. DB 함수(sql/16)도 같은 기준으로 확인한다.
+  if (bizNo.replace(/\D/g, '').length !== 10) {
+    return jsonRes(400, { result: 'error', msg: '사업자등록번호 10자리를 정확히 입력해주세요.' });
+  }
   const dept = str(reqBody.dept);
   const position = str(reqBody.position);
   const lengths = { name, company, email, phone, bizNo, dept, position };
@@ -328,7 +334,14 @@ async function handleApply(reqBody, clientIp) {
   }
 
   if (!alreadyApplied) await sendApplyAlimtalk({ name, phoneDigits, course });
-  return jsonRes(200, { result: 'success' });
+
+  // 신청 완료 화면 안내용: 판별된 구분(회원사/비회원사)만 돌려준다. 신청 전에는 알려주지 않는다(회비 납부 여부 노출 방지).
+  let feeType = null;
+  if (adminDbClient) {
+    const { data: saved } = await adminDbClient.from('education_apply').select('fee_type').eq('req_id', req_id).limit(1);
+    feeType = (saved && saved[0] && saved[0].fee_type) || null;
+  }
+  return jsonRes(200, { result: 'success', feeType });
 }
 
 // 홈페이지 접속 횟수: 오늘 날짜(한국 시간)의 숫자만 1 올린다(sql/15). IP 등 개인정보는 저장하지 않는다.
@@ -381,7 +394,17 @@ function validateCourse(reqBody) {
   if (!str(reqBody.title)) return '과정명을 입력해주세요.';
   if (!DATE_RE.test(str(reqBody.endDate))) return '교육 종료일을 입력해주세요. (개인정보 파기 기준)';
   if (str(reqBody.deadline) && !DATE_RE.test(str(reqBody.deadline))) return '신청 마감일 형식이 올바르지 않습니다.';
+  for (const k of ['memberFee', 'nonmemberFee']) {
+    const v = str(reqBody[k]).replace(/,/g, '');
+    if (v && !/^\d{1,8}$/.test(v)) return '교육비는 숫자(원)로 입력해주세요.';
+  }
   return null;
+}
+
+// 교육비(원) 칸: 쉼표를 빼고 숫자로. 비워 두면 null(교육비 없이 회원 구분만 저장)
+function feeValue(v) {
+  const digits = str(v).replace(/,/g, '');
+  return /^\d{1,8}$/.test(digits) ? parseInt(digits, 10) : null;
 }
 
 function courseFields(reqBody) {
@@ -400,6 +423,8 @@ function courseFields(reqBody) {
     instructor_bio: reqBody.instructorBio,
     contact: reqBody.contact,
     payment_info: (reqBody.cost || "") + "|||" + (reqBody.paymentInfo || ""),
+    member_fee: feeValue(reqBody.memberFee),
+    nonmember_fee: feeValue(reqBody.nonmemberFee),
     other_info: reqBody.otherInfo
   };
 }
@@ -409,6 +434,7 @@ function courseFields(reqBody) {
 const ADMIN_ROLES = ['admin', 'staff'];
 const STAFF_ACTIONS = ['log_csv'];
 const MAX_BULK_DELETE = 100;
+const MAX_MEMBER_LIST = 50000; // 회원사 명단 한 번에 올릴 수 있는 최대 개수
 
 // 관리자 접속 기록(sql/14 admin_access_log). 서버 전용 키로만 쓴다. 성공하면 true.
 async function logAccess(user, role, action, detail) {
@@ -517,6 +543,8 @@ exports.handler = async function(event, context) {
             phone: app.phone || "",
             email: app.email || "",
             privacy: app.agree_privacy ? "Y" : "N",
+            feeType: app.fee_type || "",
+            appliedFee: app.applied_fee ?? "",
             memberType: "",
             feeStatus: "",
             councilType: ""
@@ -588,6 +616,62 @@ exports.handler = async function(event, context) {
         await logAccess(adminUser, adminRole, 'delete_applications', `요청 ${ids.length}건, 삭제 ${deleted}건`);
         if (deleted === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 신청을 찾을 수 없습니다.' });
         return jsonRes(200, { result: 'success', deleted });
+      }
+
+      // 신청 1건의 회원 구분 고치기(회원사 ↔ 비회원사). 적용 교육비도 그 과정의 해당 금액으로 바꾼다.
+      if (action === 'set_fee_type') {
+        const id = str(reqBody.id);
+        const feeType = str(reqBody.feeType);
+        if (!UUID_RE.test(id) || !['member', 'nonmember'].includes(feeType)) return jsonRes(400, { result: 'error', msg: '잘못된 요청입니다.' });
+        const { data: rows, error: rowError } = await dbClient.from('education_apply').select('id, course_id').eq('id', id).limit(1);
+        if (rowError) throw rowError;
+        if (!rows || rows.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 신청을 찾을 수 없습니다.' });
+        const { data: courses, error: courseError } = await dbClient.from('courses').select('member_fee, nonmember_fee').eq('id', rows[0].course_id).limit(1);
+        if (courseError) throw courseError;
+        const c = (courses && courses[0]) || {};
+        const appliedFee = (feeType === 'member' ? c.member_fee : c.nonmember_fee) ?? null;
+        const { data, error } = await dbClient.from('education_apply').update({ fee_type: feeType, applied_fee: appliedFee }).eq('id', id).select('id');
+        if (error) throw error;
+        if (!data || data.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 신청을 찾을 수 없습니다.' });
+        await logAccess(adminUser, adminRole, 'set_fee_type', `신청 ${id}, ${feeType}`);
+        return jsonRes(200, { result: 'success', feeType, appliedFee });
+      }
+
+      // 회비 납부 회원사 명단(sql/16). 슈퍼관리자(OTP 통과)만, DB 규칙에서도 확인한다.
+      if (action === 'member_info') {
+        const { count, error } = await dbClient.from('member_companies').select('biz_no', { count: 'exact', head: true });
+        if (error) throw error;
+        const { data: latest, error: latestError } = await dbClient.from('member_companies').select('created_at').order('created_at', { ascending: false }).limit(1);
+        if (latestError) throw latestError;
+        return jsonRes(200, { result: 'success', count: count || 0, updatedAt: latest && latest[0] ? formatTimestamp(latest[0].created_at) : '' });
+      }
+      if (action === 'member_check' || action === 'member_add' || action === 'member_delete') {
+        const bizNo = str(reqBody.bizNo).replace(/\D/g, '');
+        if (bizNo.length !== 10) return jsonRes(400, { result: 'error', msg: '사업자등록번호 10자리를 입력해주세요.' });
+        if (action === 'member_check') {
+          const { data, error } = await dbClient.from('member_companies').select('biz_no').eq('biz_no', bizNo).limit(1);
+          if (error) throw error;
+          return jsonRes(200, { result: 'success', exists: !!(data && data.length) });
+        }
+        if (action === 'member_add') {
+          const { error } = await dbClient.from('member_companies').insert([{ biz_no: bizNo }]);
+          if (error && error.code !== '23505') throw error; // 23505: 이미 있음
+          await logAccess(adminUser, adminRole, 'member_add', `사업자번호 끝 4자리 ${bizNo.slice(-4)}`);
+          return jsonRes(200, { result: 'success', already: !!error });
+        }
+        const { data, error } = await dbClient.from('member_companies').delete().eq('biz_no', bizNo).select('biz_no');
+        if (error) throw error;
+        await logAccess(adminUser, adminRole, 'member_delete', `사업자번호 끝 4자리 ${bizNo.slice(-4)}`);
+        return jsonRes(200, { result: 'success', deleted: (data || []).length });
+      }
+      if (action === 'member_replace') {
+        const list = str(reqBody.bizNos).split(',').map(x => x.replace(/\D/g, '')).filter(x => x.length === 10);
+        if (list.length === 0) return jsonRes(400, { result: 'error', msg: '파일에서 사업자등록번호(10자리)를 찾지 못했습니다.' });
+        if (list.length > MAX_MEMBER_LIST) return jsonRes(400, { result: 'error', msg: `한 번에 ${MAX_MEMBER_LIST}개까지 올릴 수 있습니다.` });
+        const { data, error } = await dbClient.rpc('replace_member_companies', { p_biz_nos: list });
+        if (error) throw error;
+        await logAccess(adminUser, adminRole, 'member_replace', `명단 교체 ${data}개`);
+        return jsonRes(200, { result: 'success', count: data });
       }
 
       if ((action === 'add_course' || action === 'update_course') && validateCourse(reqBody)) {

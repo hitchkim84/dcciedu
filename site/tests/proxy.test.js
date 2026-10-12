@@ -23,7 +23,8 @@ function resetDb() {
       { id: 'a-full', course_id: FULL_ID, req_id: 'x', name: '기존', company: 'A', email: 'a@a', phone: '010', agree_privacy: true, sync_status: 'success' }
     ],
     admin_access_log: [],
-    daily_visits: 0
+    daily_visits: 0,
+    member_companies: []
   };
   visitClientKeys = [];
   outboundCalls = [];
@@ -64,10 +65,12 @@ function roleOf(client) {
 function canRead(role, table) {
   if (table === 'courses' || table === 'public_courses') return true;
   if (table === 'admin_access_log') return role === 'service';
+  if (table === 'member_companies') return role === 'admin'; // sql/16: 슈퍼관리자(aal2)만
   return role === 'admin' || role === 'staff' || role === 'service';
 }
 function canWrite(role, table) {
   if (table === 'admin_access_log') return role === 'service';
+  if (table === 'member_companies') return role === 'admin';
   return role === 'admin' || role === 'service';
 }
 
@@ -75,7 +78,7 @@ function makeQuery(client, table) {
   const q = { op: 'select', filters: [], cols: '*', lim: null, single: null, returning: false };
   const role = roleOf(client);
   const api = {
-    select(cols) { if (q.op === 'select') q.cols = cols || '*'; else q.returning = true; return api; },
+    select(cols, opts) { if (q.op === 'select') { q.cols = cols || '*'; q.count = opts && opts.count; } else q.returning = true; return api; },
     insert(rows) { q.op = 'insert'; q.rows = rows; return api; },
     update(fields) { q.op = 'update'; q.fields = fields; return api; },
     delete() { q.op = 'delete'; return api; },
@@ -109,6 +112,7 @@ function makeQuery(client, table) {
     const rows = db[table];
     if (q.op === 'select') {
       let data = canRead(role, table) ? rows.filter(match).map(embed) : [];
+      if (q.count) return { data: null, count: data.length, error: null };
       if (q.lim) data = data.slice(0, q.lim);
       if (q.single) return { data: data[0] || null, error: null };
       return { data, error: null };
@@ -118,6 +122,9 @@ function makeQuery(client, table) {
       return { data: [], error: null }; // RLS silently filters UPDATE/DELETE
     }
     if (q.op === 'insert') {
+      if (table === 'member_companies' && q.rows.some(r => rows.some(x => x.biz_no === r.biz_no))) {
+        return { data: null, error: { message: 'duplicate key', code: '23505' } };
+      }
       const inserted = q.rows.map(r => ({ id: 'new-' + rows.length, ...r }));
       rows.push(...inserted);
       return { data: inserted, error: null };
@@ -149,6 +156,8 @@ function atomicCourseApply(p) {
     if (existing.course_id !== p.p_course_id) return raise('요청 식별자 충돌(Collision). 비정상적인 재시도입니다.');
     return { data: existing.id, error: null };
   }
+  const bizDigits = String(p.p_biz_no || '').replace(/\D/g, '');
+  if (bizDigits.length !== 10) return raise('사업자등록번호 10자리를 정확히 입력해주세요.');
   const course = db.courses.find(c => c.id === p.p_course_id);
   if (!course) return raise('해당 과정을 찾을 수 없습니다.');
   if (!p.p_agree_privacy) return raise('개인정보 수집 및 이용에 동의해야 합니다.');
@@ -157,7 +166,10 @@ function atomicCourseApply(p) {
   const id = 'apply-' + (db.education_apply.length + 1);
   db.education_apply.push({
     id, req_id: p.p_req_id, course_id: p.p_course_id, company: p.p_company, name: p.p_name,
-    phone: p.p_phone, email: p.p_email, agree_privacy: p.p_agree_privacy, sync_status: 'pending'
+    phone: p.p_phone, email: p.p_email, agree_privacy: p.p_agree_privacy, sync_status: 'pending',
+    // sql/16 흉내: 회비 납부 회원사 명단에 있으면 회원사 교육비
+    fee_type: db.member_companies.some(m => m.biz_no === bizDigits) ? 'member' : 'nonmember',
+    applied_fee: db.member_companies.some(m => m.biz_no === bizDigits) ? (course.member_fee ?? null) : (course.nonmember_fee ?? null)
   });
   return { data: id, error: null };
 }
@@ -182,6 +194,12 @@ function createClient(url, key, opts = {}) {
   client.from = table => makeQuery(client, table);
   client.rpc = async (name, params) => {
     if (name === 'atomic_course_apply') { lastRpcClientKey = client.key; return atomicCourseApply(params); }
+    if (name === 'replace_member_companies') {
+      if (roleOf(client) !== 'admin') return raise('슈퍼관리자(OTP 인증)만 회원사 명단을 바꿀 수 있습니다.');
+      const list = [...new Set(params.p_biz_nos.map(x => String(x).replace(/\D/g, '')).filter(x => /^\d{10}$/.test(x)))];
+      db.member_companies = list.map(biz_no => ({ biz_no, created_at: '2026-10-12T00:00:00Z' }));
+      return { data: list.length, error: null };
+    }
     if (name === 'count_visit') {
       visitClientKeys.push(client.key);
       if (client.key !== 'service') return raise('permission denied for function count_visit');
@@ -862,4 +880,95 @@ test('visit: without the server key nothing is counted and the page still works'
   assert.strictEqual(res.statusCode, 200);
   assert.deepStrictEqual(visitClientKeys, []);
   assert.strictEqual(db.daily_visits, 0);
+});
+
+// ---- 회원사 교육비 (sql/16) ----
+function adminPost(handler, params, token = ADMIN_TOKEN) {
+  return call(handler, { method: 'POST', type: 'admin', token, body: new URLSearchParams(params).toString() });
+}
+
+test('fee: business number is required (10 digits) and nothing is saved without it', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const before = db.education_apply.length;
+  for (const bizNo of ['', '123-45-678', '12345678901', 'abc']) {
+    const res = await call(handler, { method: 'POST', body: applyForm({ bizNo }) });
+    assert.strictEqual(res.statusCode, 400);
+    assert.match(res.json.msg, /사업자등록번호/);
+  }
+  assert.strictEqual(db.education_apply.length, before);
+  assert.strictEqual(solapiRequests.length, 0);
+});
+
+test('fee: member company gets the member fee, others the non-member fee; only the type is returned', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  Object.assign(db.courses[0], { member_fee: 44000, nonmember_fee: 88000, capacity: 0 });
+  db.member_companies.push({ biz_no: '1234567890' });
+  const m = await call(handler, { method: 'POST', body: applyForm({ bizNo: '123-45-67890' }) });
+  assert.strictEqual(m.statusCode, 200);
+  assert.strictEqual(m.json.feeType, 'member');
+  assert.deepStrictEqual(Object.keys(m.json).sort(), ['feeType', 'result']);
+  const n = await call(handler, { method: 'POST', body: applyForm({ bizNo: '987-65-43210', name: '김철수', phone: '010-9999-8888' }) });
+  assert.strictEqual(n.json.feeType, 'nonmember');
+  const saved = db.education_apply.filter(a => a.course_id === COURSE_ID);
+  assert.deepStrictEqual(saved.map(a => [a.fee_type, a.applied_fee]), [['member', 44000], ['nonmember', 88000]]);
+});
+
+test('fee: admin list shows fee type and fee; super admin can correct the type', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  Object.assign(db.courses[1], { member_fee: 55000, nonmember_fee: 110000 });
+  const APP_ID = '33333333-3333-4333-8333-333333333333';
+  db.education_apply[0].id = APP_ID;
+  db.education_apply[0].fee_type = 'nonmember';
+  db.education_apply[0].applied_fee = 110000;
+  const list = await call(handler, { type: 'admin', token: ADMIN_TOKEN });
+  const app = list.json[FULL_ID].applicants[0];
+  assert.strictEqual(app.feeType, 'nonmember');
+  assert.strictEqual(app.appliedFee, 110000);
+  const fix = await adminPost(handler, { action: 'set_fee_type', id: APP_ID, feeType: 'member' });
+  assert.strictEqual(fix.statusCode, 200);
+  assert.deepStrictEqual([db.education_apply[0].fee_type, db.education_apply[0].applied_fee], ['member', 55000]);
+  assert.ok(db.admin_access_log.some(l => l.action === 'set_fee_type'));
+  assert.strictEqual((await adminPost(handler, { action: 'set_fee_type', id: APP_ID, feeType: 'vip' })).statusCode, 400);
+  const staff = await adminPost(handler, { action: 'set_fee_type', id: APP_ID, feeType: 'nonmember' }, STAFF_TOKEN);
+  assert.strictEqual(staff.statusCode, 403);
+  assert.strictEqual(db.education_apply[0].fee_type, 'member');
+});
+
+test('fee: member list replace/add/check/delete is super admin only; logs never hold full numbers', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const rep = await adminPost(handler, { action: 'member_replace', bizNos: '123-45-67890,1112233333,bad,1234567890' });
+  assert.strictEqual(rep.statusCode, 200);
+  assert.strictEqual(rep.json.count, 2);
+  const info = await adminPost(handler, { action: 'member_info' });
+  assert.strictEqual(info.json.count, 2);
+  assert.strictEqual((await adminPost(handler, { action: 'member_check', bizNo: '111-22-33333' })).json.exists, true);
+  assert.strictEqual((await adminPost(handler, { action: 'member_add', bizNo: '555-55-55555' })).statusCode, 200);
+  assert.strictEqual((await adminPost(handler, { action: 'member_add', bizNo: '555-55-55555' })).json.already, true);
+  assert.strictEqual((await adminPost(handler, { action: 'member_delete', bizNo: '1112233333' })).json.deleted, 1);
+  assert.deepStrictEqual(db.member_companies.map(m => m.biz_no).sort(), ['1234567890', '5555555555']);
+  assert.strictEqual((await adminPost(handler, { action: 'member_add', bizNo: '123' })).statusCode, 400);
+  assert.strictEqual((await adminPost(handler, { action: 'member_replace', bizNos: 'x,y' })).statusCode, 400);
+  for (const action of ['member_info', 'member_check', 'member_add', 'member_delete', 'member_replace']) {
+    assert.strictEqual((await adminPost(handler, { action, bizNo: '5555555555', bizNos: '9999999999' }, STAFF_TOKEN)).statusCode, 403);
+    assert.strictEqual((await adminPost(handler, { action, bizNo: '5555555555', bizNos: '9999999999' }, ADMIN_AAL1_TOKEN)).statusCode, 403);
+  }
+  assert.deepStrictEqual(db.member_companies.map(m => m.biz_no).sort(), ['1234567890', '5555555555']);
+  const logText = JSON.stringify(db.admin_access_log);
+  assert.ok(!logText.includes('5555555555') && !logText.includes('1234567890'));
+});
+
+test('fee: course fees are saved as numbers; invalid fee text is refused', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const base = { action: 'add_course', title: '새 과정', endDate: '2026-12-31', cost: '', paymentInfo: '' };
+  const ok = await adminPost(handler, { ...base, memberFee: '44,000', nonmemberFee: '88000' });
+  assert.strictEqual(ok.statusCode, 200);
+  const c = db.courses.find(x => x.title === '새 과정');
+  assert.deepStrictEqual([c.member_fee, c.nonmember_fee], [44000, 88000]);
+  const empty = await adminPost(handler, { ...base, title: '무료 과정', memberFee: '', nonmemberFee: '' });
+  assert.strictEqual(empty.statusCode, 200);
+  assert.deepStrictEqual([db.courses.find(x => x.title === '무료 과정').member_fee], [null]);
+  assert.strictEqual((await adminPost(handler, { ...base, memberFee: '4만원' })).statusCode, 400);
+  const pub = await call(handler, {});
+  assert.strictEqual(pub.json[c.id].memberFee, 44000);
+  assert.strictEqual(pub.json[c.id].nonmemberFee, 88000);
 });

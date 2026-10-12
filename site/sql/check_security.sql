@@ -25,7 +25,10 @@ expected_policy(tablename, policyname, cmd) AS (
          ('courses', 'Admin can delete courses', 'DELETE'),
          ('education_apply', 'Admin or staff can view applications', 'SELECT'),
          ('education_apply', 'Admin can update applications', 'UPDATE'),
-         ('education_apply', 'Admin can delete applications', 'DELETE')
+         ('education_apply', 'Admin can delete applications', 'DELETE'),
+         ('member_companies', 'Admin can view member companies', 'SELECT'),
+         ('member_companies', 'Admin can insert member companies', 'INSERT'),
+         ('member_companies', 'Admin can delete member companies', 'DELETE')
 )
 -- 1. 모든 접근 규칙: 관리자 규칙은 admin과 aal2가 모두 들어 있어야 한다
 SELECT '1.규칙' AS 항목, tablename || ' / ' || policyname AS 대상,
