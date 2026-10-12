@@ -331,6 +331,18 @@ async function handleApply(reqBody, clientIp) {
   return jsonRes(200, { result: 'success' });
 }
 
+// 홈페이지 접속 횟수: 오늘 날짜(한국 시간)의 숫자만 1 올린다(sql/15). IP 등 개인정보는 저장하지 않는다.
+// 검색 로봇은 세지 않는다. 기록에 실패해도 홈페이지 이용에는 영향이 없다.
+const BOT_UA_RE = /bot|crawl|spider|slurp|yeti|daumoa|preview|headless|monitor|curl|wget|python|node-fetch/i;
+async function handleVisit(headers) {
+  const ua = headers['user-agent'] || headers['User-Agent'] || '';
+  if (adminDbClient && ua && !BOT_UA_RE.test(ua)) {
+    const { error } = await adminDbClient.rpc('count_visit');
+    if (error) console.error('Visit count failed:', error.message);
+  }
+  return jsonRes(200, { result: 'success' });
+}
+
 // 신청자 본인 확인: 이름 + 휴대폰 + 이메일이 모두 일치하는 신청의 과정명·교육일시·신청일시만 돌려준다.
 // 반복 조회 제한과 일치 확인은 DB 함수(sql/12_security_hardening.sql)에서 한다.
 // 이름·휴대폰·이메일 일치는 본인 인증이 아니다(셋을 아는 사람은 조회 가능). 그래서 개인정보는 돌려주지 않는다.
@@ -530,6 +542,10 @@ exports.handler = async function(event, context) {
 
       if (action === 'lookup' && isPublic) {
         return await handleLookup(reqBody);
+      }
+
+      if (action === 'visit' && isPublic) {
+        return await handleVisit(event.headers || {});
       }
 
       if (action === 'apply') {
