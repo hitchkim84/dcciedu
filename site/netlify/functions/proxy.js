@@ -194,6 +194,62 @@ const CAPTCHA_MSG = {
   misconfigured: '신청 접수 설정에 문제가 있습니다. 교육센터로 연락해주세요.'
 };
 
+// 신청 접수 안내 카카오 알림톡 (솔라피). 키가 없으면 보내지 않는다(설정 전에도 신청은 정상).
+// 보내는 정보는 이름·휴대폰·과정명·교육일시·장소뿐이다(회사명·사업자번호·이메일은 보내지 않음).
+// 발송이 실패해도 신청은 이미 저장됐으므로 신청 결과에는 영향을 주지 않는다.
+// 템플릿 변수 이름(#{...})은 솔라피에 등록·승인된 템플릿 문구와 똑같아야 한다.
+const SOLAPI_SEND_URL = 'https://api.solapi.com/messages/v4/send';
+async function sendApplyAlimtalk({ name, phoneDigits, course }) {
+  const key = process.env.SOLAPI_API_KEY;
+  const secret = process.env.SOLAPI_API_SECRET;
+  const pfId = process.env.SOLAPI_PFID;
+  const templateId = process.env.SOLAPI_TEMPLATE_ID;
+  if (!key || !secret || !pfId || !templateId) return 'skipped';
+  const sender = (process.env.SOLAPI_SENDER || '').replace(/\D/g, ''); // 있으면 알림톡 실패 시 문자로 대신 발송
+  const date = new Date().toISOString();
+  const salt = crypto.randomBytes(16).toString('hex');
+  const signature = crypto.createHmac('sha256', secret).update(date + salt).digest('hex');
+  const message = {
+    to: phoneDigits,
+    kakaoOptions: {
+      pfId,
+      templateId,
+      disableSms: !sender,
+      variables: {
+        '#{이름}': name,
+        '#{과정명}': course.title || '',
+        '#{교육일시}': course.date || '',
+        '#{장소}': course.place || '교육센터 홈페이지 안내 참고'
+      }
+    }
+  };
+  if (sender) message.from = sender;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(SOLAPI_SEND_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `HMAC-SHA256 apiKey=${key}, date=${date}, salt=${salt}, signature=${signature}`
+      },
+      body: JSON.stringify({ message }),
+      signal: controller.signal
+    });
+    if (!res.ok) {
+      // 응답 본문에 휴대폰 번호가 들어 있을 수 있어 상태 코드만 남긴다.
+      console.error('Alimtalk send failed: HTTP', res.status);
+      return 'failed';
+    }
+    return 'sent';
+  } catch (e) {
+    console.error('Alimtalk send error:', e.name);
+    return 'failed';
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function handleApply(reqBody, clientIp) {
   // 사람 눈에 보이지 않는 칸(허니팟)이 채워져 있으면 자동 입력 로봇으로 본다.
   if (str(reqBody.website)) {
@@ -233,7 +289,7 @@ async function handleApply(reqBody, clientIp) {
   // Resolve the course by id when available; title is a fallback for older pages.
   const courseIdParam = str(reqBody.course_id);
   const courseTitleParam = str(reqBody.course);
-  let query = supabase.from('courses').select('id, title');
+  let query = supabase.from('courses').select('id, title, date, place');
   if (UUID_RE.test(courseIdParam)) query = query.eq('id', courseIdParam);
   else if (courseTitleParam) query = query.eq('title', courseTitleParam);
   else return jsonRes(400, { result: 'error', msg: '교육 과정 정보가 없습니다.' });
@@ -248,6 +304,13 @@ async function handleApply(reqBody, clientIp) {
   // Same person + same phone + same course => same req_id (idempotent resubmit).
   // Name is included so colleagues sharing a company phone number are not merged.
   const req_id = crypto.createHash('sha256').update(`${phoneDigits}|${course.id}|${name}`).digest('hex');
+
+  // 같은 신청을 두 번 눌러 다시 보낸 경우(이미 저장됨)에는 알림톡을 다시 보내지 않는다.
+  let alreadyApplied = false;
+  if (adminDbClient) {
+    const { data: existing } = await adminDbClient.from('education_apply').select('id').eq('req_id', req_id).limit(1);
+    alreadyApplied = !!(existing && existing.length > 0);
+  }
 
   // 신청 조회 기능은 사용하지 않으므로 조회용 ID·비밀번호는 저장하지 않는다.
   // 서비스 키가 있으면 서버 전용 키로 호출한다(sql/10 적용 후에는 홈페이지 키로 직접 호출 불가).
@@ -264,6 +327,7 @@ async function handleApply(reqBody, clientIp) {
     return jsonRes(status, { result: 'error', msg: userMessage(applyError) });
   }
 
+  if (!alreadyApplied) await sendApplyAlimtalk({ name, phoneDigits, course });
   return jsonRes(200, { result: 'success' });
 }
 
