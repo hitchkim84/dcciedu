@@ -44,6 +44,7 @@
 - 직원마다 개인 계정(공용 계정·공용 비밀번호 금지). Supabase 회원가입은 막고 슈퍼관리자가 만든다.
 - 만들기: Supabase → Authentication → Users → Add user(이메일 `아이디@staff.dcciedu.co.kr`, Auto Confirm) → SQL Editor에서 `UPDATE auth.users SET raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"staff"}'::jsonb WHERE email = '아이디@staff.dcciedu.co.kr';` (실행 후 쿼리 삭제)
 - 퇴사·이동 시 바로 Delete user. 접속 기록은 SQL Editor에서 `SELECT * FROM admin_access_log ORDER BY created_at DESC LIMIT 100;`로 월 1회 확인한다.
+- 홈페이지 접속 횟수(날짜별 숫자만, `sql/15`): SQL Editor에서 `SELECT to_char(day, 'YYYY-MM') AS 월, sum(visits) AS 접속 FROM daily_visits GROUP BY 1 ORDER BY 1 DESC;`
 
 ## 계정·소유 구조와 업무 인계 (비밀번호 등 실제 값은 적지 않는다)
 | 구성 | 소유 | 로그인 |

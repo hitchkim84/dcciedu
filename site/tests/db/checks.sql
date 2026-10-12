@@ -67,6 +67,19 @@ BEGIN
   IF r <> 'rows=1' THEN RAISE EXCEPTION '서버 키 접속기록 쓰기: %', r; END IF;
   RAISE NOTICE '접속 기록: 관리자·일반관리자·비로그인은 읽기·쓰기 불가, 서버 키만 기록';
 
+  -- 접속 횟수(sql/15): 홈페이지·관리자 키로 읽기·쓰기·함수 실행 불가, 서버 키만 숫자를 올림
+  r := pg_temp.as_role('anon', '{}', 'SELECT count(*) FROM public.daily_visits');
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '비로그인 접속횟수 조회: %', r; END IF;
+  r := pg_temp.as_role('anon', '{}', 'SELECT count(*) FROM (SELECT public.count_visit()) x');
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '비로그인 접속횟수 함수 실행: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal2, $q$WITH x AS (INSERT INTO public.daily_visits (day, visits) VALUES (current_date, 999) RETURNING 1) SELECT count(*) FROM x$q$);
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '관리자 접속횟수 조작: %', r; END IF;
+  r := pg_temp.as_role('service_role', '{}', 'SELECT count(*) FROM (SELECT public.count_visit()) x');
+  IF r <> 'rows=1' THEN RAISE EXCEPTION '서버 키 접속횟수 1회: %', r; END IF;
+  r := pg_temp.as_role('service_role', '{}', 'SELECT count(*) FROM (SELECT public.count_visit()) x');
+  IF (SELECT visits FROM public.daily_visits WHERE day = (now() AT TIME ZONE 'Asia/Seoul')::date) <> 2 THEN RAISE EXCEPTION '접속횟수 누적 오류'; END IF;
+  RAISE NOTICE '접속 횟수: 홈페이지·관리자 키로 읽기·조작·실행 불가, 서버 키만 날짜별 숫자를 올림(2회 → 2)';
+
   -- 신청 직접 등록·삭제·수정
   r := pg_temp.as_role('authenticated', aal2, $q$WITH x AS (INSERT INTO public.education_apply (req_id, course_id, name) VALUES ('direct', '55555555-5555-5555-5555-555555555555', 'x') RETURNING 1) SELECT count(*) FROM x$q$);
   IF r <> 'error=42501' THEN RAISE EXCEPTION '관리자 aal2 신청 직접 등록: %', r; END IF;

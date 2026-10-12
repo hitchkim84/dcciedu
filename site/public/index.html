@@ -1053,11 +1053,23 @@
             }
         }
 
+        // 접속 횟수 기록(날짜별 숫자만, 개인정보 없음). 같은 탭에서 새로고침한 것은 하루 한 번만 센다.
+        function countVisit() {
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:') return;
+            const key = 'dcciedu-visit-' + new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+            try {
+                if (sessionStorage.getItem(key)) return;
+                sessionStorage.setItem(key, '1');
+            } catch (e) { /* 저장소를 못 쓰는 브라우저는 매번 센다 */ }
+            fetch(scriptURL + '?type=public', { method: 'POST', body: new URLSearchParams({ action: 'visit' }), keepalive: true }).catch(() => {});
+        }
+
         // 초기화
         document.addEventListener('DOMContentLoaded', () => {
             history.replaceState({ page: 'main' }, '', '');
             fetchConfig();
             fetchCourses();
+            countVisit();
         });
 
         window.addEventListener('popstate', (e) => {

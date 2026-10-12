@@ -22,8 +22,10 @@ function resetDb() {
     education_apply: [
       { id: 'a-full', course_id: FULL_ID, req_id: 'x', name: '기존', company: 'A', email: 'a@a', phone: '010', agree_privacy: true, sync_status: 'success' }
     ],
-    admin_access_log: []
+    admin_access_log: [],
+    daily_visits: 0
   };
+  visitClientKeys = [];
   outboundCalls = [];
   outboundBodies = [];
   solapiMode = 'ok';
@@ -139,6 +141,7 @@ function raise(message) {
 let lastRpcParams = null;
 let lastRpcClientKey = null;
 let lastLookupClientKey = null;
+let visitClientKeys = [];
 function atomicCourseApply(p) {
   lastRpcParams = p;
   const existing = db.education_apply.find(a => a.req_id === p.p_req_id);
@@ -179,6 +182,12 @@ function createClient(url, key, opts = {}) {
   client.from = table => makeQuery(client, table);
   client.rpc = async (name, params) => {
     if (name === 'atomic_course_apply') { lastRpcClientKey = client.key; return atomicCourseApply(params); }
+    if (name === 'count_visit') {
+      visitClientKeys.push(client.key);
+      if (client.key !== 'service') return raise('permission denied for function count_visit');
+      db.daily_visits += 1;
+      return { data: null, error: null };
+    }
     if (name === 'lookup_my_applications') { lastLookupClientKey = client.key; return lookupMyApplications(params); }
     return raise('unknown rpc');
   };
@@ -809,4 +818,48 @@ test('alimtalk: SMS fallback only when a sender number is set', async () => {
   const m = solapiRequests[0].body.message;
   assert.strictEqual(m.from, '0532223109');
   assert.strictEqual(m.kakaoOptions.disableSms, false);
+});
+
+// 접속 횟수(sql/15): 서버 키로 날짜별 숫자만 올리고, 로봇은 세지 않으며, 실패해도 홈페이지에 영향이 없다.
+function visit(handler, ua) {
+  return handler({
+    httpMethod: 'POST',
+    queryStringParameters: { type: 'public' },
+    headers: ua === undefined ? {} : { 'user-agent': ua },
+    body: new URLSearchParams({ action: 'visit' }).toString(),
+    isBase64Encoded: false
+  }).then(res => ({ ...res, json: JSON.parse(res.body) }));
+}
+const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36';
+const KAKAO_UA = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36 KAKAOTALK 10.8.0';
+
+test('visit: counted once per call with the server key, nothing personal stored, no application created', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const before = db.education_apply.length;
+  const res = await visit(handler, CHROME_UA);
+  await visit(handler, KAKAO_UA);
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(res.json.result, 'success');
+  assert.strictEqual(db.daily_visits, 2);
+  assert.deepStrictEqual(visitClientKeys, ['service', 'service']);
+  assert.strictEqual(db.education_apply.length, before);
+  assert.deepStrictEqual(outboundCalls, []);
+  assert.strictEqual(res.headers['Cache-Control'], 'no-store');
+});
+
+test('visit: bots and requests without a browser are not counted', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  for (const ua of ['Googlebot/2.1 (+http://www.google.com/bot.html)', 'Mozilla/5.0 (compatible; Yeti/1.1; +http://naver.me/spd)', 'Mozilla/5.0 (compatible; Daum/4.1; +http://cs.daum.net/faq/15/4118.html?faqId=28966) Daumoa', 'curl/8.4.0', 'HeadlessChrome/129', undefined]) {
+    const res = await visit(handler, ua);
+    assert.strictEqual(res.statusCode, 200);
+  }
+  assert.strictEqual(db.daily_visits, 0);
+});
+
+test('visit: without the server key nothing is counted and the page still works', async () => {
+  const handler = loadHandler({});
+  const res = await visit(handler, CHROME_UA);
+  assert.strictEqual(res.statusCode, 200);
+  assert.deepStrictEqual(visitClientKeys, []);
+  assert.strictEqual(db.daily_visits, 0);
 });
