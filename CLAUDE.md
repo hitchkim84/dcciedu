@@ -31,6 +31,7 @@
 ## 2. 홈페이지 안정성
 - 운영 배포 브랜치는 `netlify-test`다. 여기에 머지하면 바로 실제 사이트에 배포된다.
 - 수정은 작업 브랜치에 모아 두고, 사용자가 확인한 뒤 마지막에 한 번만 배포한다(Netlify 크레딧 절약). PR도 그때 만든다.
+- 회사 PC에 남아 있는 옛 작업 폴더(2026-10-01 이전 Antigravity 작업본)에서 수정해 올리지 않는다. 오늘 이후 고친 내용을 덮어쓸 수 있다. 직접 수정할 때는 GitHub 최신 상태를 먼저 받는다.
 - 배포 전에 `site`에서 `node --test tests/proxy.test.js`를 실행해 통과를 확인한다. SQL을 바꿨으면 `bash tests/db/run.sh`(실제 PostgreSQL 임시 DB)도 통과해야 한다. 가짜 DB 테스트 결과만으로 실제 차단을 주장하지 않는다.
 - `netlify.toml`이 `site` 안에 있으므로 Netlify Base directory는 `site`이다. 폴더 이름이나 `netlify.toml`을 바꾸면 Netlify 설정도 함께 바꿔야 한다.
 - DB 변경은 `site/sql/`에 번호를 붙인 SQL 파일로 남긴다. 여러 번 실행해도 안전하게 작성하고, Supabase SQL Editor에서 직접 실행한다.
