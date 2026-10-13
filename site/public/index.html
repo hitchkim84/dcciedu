@@ -269,7 +269,7 @@
                             </div>
                             <div class="flex items-start">
                                 <span class="text-gray-500 w-20 flex-shrink-0 font-medium">교육비</span>
-                                <span id="detail-cost" class="font-medium text-gray-900"></span>
+                                <span id="detail-cost" class="font-medium text-gray-900 whitespace-pre-line"></span>
                             </div>
                         </div>
                     </div>
@@ -480,8 +480,10 @@
 
                                 <div><label class="block text-sm font-bold text-gray-700">사업자번호</label><input
                                         type="text" id="bizNo" required maxlength="12" oninput="autoHyphen(this, 'biz')"
+                                        pattern="[0-9]{3}-[0-9]{2}-[0-9]{5}" title="사업자등록번호 10자리를 입력해주세요."
                                         class="mt-1 w-full border border-gray-300 rounded-md py-2 px-3 focus:ring-blue-500 focus:border-blue-500"
-                                        placeholder="123-45-67890 (숫자만)"></div>
+                                        placeholder="123-45-67890 (숫자만)">
+                                    <p class="text-xs text-gray-500 mt-1">회원사 교육비 적용 여부 확인에 쓰입니다.</p></div>
                             </div>
                             <div class="grid grid-cols-2 gap-4">
                                 <div><label class="block text-sm font-bold text-gray-700">부서</label><input type="text"
@@ -899,7 +901,7 @@
             fields.forEach(f => document.getElementById(`detail-${f}`).innerText = data[f] || '');
             
             document.getElementById('detail-payment-info').innerText = data.paymentInfo || "무료 / 별도 문의";
-            document.getElementById('detail-cost').innerText = data.cost || "무료 / 별도 문의";
+            document.getElementById('detail-cost').innerText = feeText(data) || data.cost || "무료 / 별도 문의";
             document.getElementById('detail-other-info').innerText = data.otherInfo || "없음";
             document.getElementById('detail-contact').innerText = data.contact || "기업지원부 통상진흥팀 (053-222-3109)";
             document.getElementById('detail-capacity').innerText = cap > 0 ? `신청 ${cur}명 / 정원 ${cap}명` : "제한 없음";
@@ -1029,7 +1031,9 @@
 
                 if (result.result === 'success') {
                     const appliedTitle = document.getElementById('modalCourseTitle').value;
-                    alert(`[신청 완료]\n「${appliedTitle}」 과정에 정상적으로 접수되었습니다.\n담당자가 확인 후 안내해 드리겠습니다.\n\n접수 내역은 홈페이지 상단 '신청 확인'에서\n성명·휴대폰·이메일로 언제든 확인할 수 있습니다.`);
+                    const feeNotice = result.feeType === 'member' ? '\n\n회원사 교육비 적용 대상입니다.'
+                        : result.feeType === 'nonmember' ? '\n\n비회원사 교육비가 적용됩니다.\n(회비 납부 회원사인데 비회원사로 안내되었다면 교육센터로 연락해주세요.)' : '';
+                    alert(`[신청 완료]\n「${appliedTitle}」 과정에 정상적으로 접수되었습니다.\n담당자가 확인 후 안내해 드리겠습니다.${feeNotice}\n\n최종 교육비는 담당자 확인 후 안내됩니다.\n접수 내역은 홈페이지 상단 '신청 확인'에서\n성명·휴대폰·이메일로 언제든 확인할 수 있습니다.`);
                     closeModal();
 
                     // Navigate to the category page containing the course
@@ -1051,6 +1055,15 @@
                 btn.disabled = false;
                 resetCaptcha(); // 확인 토큰은 1회용이라 매번 새로 받는다
             }
+        }
+
+        // 과정의 회원사·비회원사 교육비(원)를 안내 문구로. 둘 다 비어 있으면 빈 문자열(기존 교육비 문구 사용)
+        function feeText(c) {
+            const won = v => Number(v).toLocaleString('ko-KR') + '원';
+            const parts = [];
+            if (c.memberFee !== null && c.memberFee !== undefined) parts.push('회원사 ' + won(c.memberFee));
+            if (c.nonmemberFee !== null && c.nonmemberFee !== undefined) parts.push('비회원사 ' + won(c.nonmemberFee));
+            return parts.length ? parts.join(' / ') + ' (1인, VAT 포함)\n※ 회원사 교육비는 회비 납부 회원사에 적용 (사업자번호로 확인)' : '';
         }
 
         // 접속 횟수 기록(날짜별 숫자만, 개인정보 없음). 같은 탭에서 새로고침한 것은 하루 한 번만 센다.

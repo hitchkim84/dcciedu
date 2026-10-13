@@ -21,6 +21,7 @@
 - 가짜 신청 방지: 허니팟 칸 + Cloudflare Turnstile(`TURNSTILE_SITE_KEY`·`TURNSTILE_SECRET`). 키가 없거나 Cloudflare 확인이 안 되면 신청을 거절한다(비상시에만 `TURNSTILE_DISABLED=true`). 토큰의 호스트(dcciedu.co.kr)와 action(`apply`)도 확인한다. Cloudflare에는 확인 토큰·IP만 보내고 신청 내용은 보내지 않는다. 신청·조회 함수는 서버 키로만 호출(`sql/10`, `sql/13`).
 - 신청 확인(홈페이지 '신청 확인'): 성명·휴대폰·이메일 3가지가 모두 일치할 때만 과정명·교육일시·신청일시를 보여준다. 본인 인증이 아니므로(세 가지를 아는 사람은 조회 가능) 개인정보는 돌려주지 않고, 틀려도 같은 답을 준다. 반복 조회 제한과 일치 확인은 DB 함수 `lookup_my_applications`(`sql/12`)에서 잠금 후 한다.
 - 신청 삭제(관리자 명단의 '삭제'·체크 후 '선택 삭제'): 슈퍼관리자(OTP 통과)만, 화면 확인 창 → 서버(일괄은 최대 100건) → DB 규칙 순서로 확인한다. 삭제는 되돌릴 수 없다.
+- 회원사 교육비(`sql/16`): 회비 납부 회원사의 사업자등록번호만 `member_companies`에 둔다(회사명·당연/임의 구분·미납 여부·회비 금액은 저장하지 않음). 명단 보기·바꾸기는 슈퍼관리자(OTP)만(화면·서버·DB). 판별 결과는 신청 전에는 보여주지 않고(회비 납부 여부 노출 방지) 신청 완료 후에만 알린다. 접속 기록에는 사업자번호 끝 4자리만 남긴다. 명단은 반기마다 타부서에서 받아 교체하고, 받은 엑셀·CSV는 올린 뒤 PC에서 지운다.
 - 과정 삭제: 신청자가 있는 과정은 삭제할 수 없다(서버 확인 + DB `ON DELETE RESTRICT`, `sql/12`).
 - 개인정보 파기: 교육 종료일(`courses.end_date`) + 1년이 지난 신청은 `purge_old_applications()`가 매월 자동 삭제(`sql/12`, pg_cron). 종료일이 없는 과정은 지우지 않으므로 관리자가 종료일을 입력한다. 자동 실행 성공 여부는 `sql/check_cron.sql`(읽기 전용)로 확인한다. 삭제 테스트는 운영 DB가 아닌 임시 DB(`tests/db/run.sh`)에서 한다.
 - 외부 스크립트 금지: 디자인은 `public/tailwind.css`(미리 생성)만 쓴다. 관리자 페이지는 CSP로 외부·인라인 스크립트를 모두 막는다(코드는 `public/admin.js`, 버튼은 `data-action`으로 연결, onclick 금지). 홈페이지도 CSP로 허용한 외부 주소(Cloudflare·네이버 지도·글꼴)만 쓴다. 새 외부 주소가 필요하면 `netlify.toml` CSP에 추가.
@@ -31,6 +32,7 @@
 ## 2. 홈페이지 안정성
 - 운영 배포 브랜치는 `netlify-test`다. 여기에 머지하면 바로 실제 사이트에 배포된다.
 - 수정은 작업 브랜치에 모아 두고, 사용자가 확인한 뒤 마지막에 한 번만 배포한다(Netlify 크레딧 절약). PR도 그때 만든다.
+- 회사 PC에 남아 있는 옛 작업 폴더(2026-10-01 이전 Antigravity 작업본)에서 수정해 올리지 않는다. 오늘 이후 고친 내용을 덮어쓸 수 있다. 직접 수정할 때는 GitHub 최신 상태를 먼저 받는다.
 - 배포 전에 `site`에서 `node --test tests/proxy.test.js`를 실행해 통과를 확인한다. SQL을 바꿨으면 `bash tests/db/run.sh`(실제 PostgreSQL 임시 DB)도 통과해야 한다. 가짜 DB 테스트 결과만으로 실제 차단을 주장하지 않는다.
 - `netlify.toml`이 `site` 안에 있으므로 Netlify Base directory는 `site`이다. 폴더 이름이나 `netlify.toml`을 바꾸면 Netlify 설정도 함께 바꿔야 한다.
 - DB 변경은 `site/sql/`에 번호를 붙인 SQL 파일로 남긴다. 여러 번 실행해도 안전하게 작성하고, Supabase SQL Editor에서 직접 실행한다.

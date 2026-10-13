@@ -158,3 +158,53 @@ BEGIN
   END IF;
   RAISE NOTICE '자동 실행 3개 등록(두 번 실행해도 중복 없음)';
 END $$;
+
+-- sql/16: 회비 납부 회원사 명단과 교육비 판별
+DO $$
+DECLARE
+  aal1 text := '{"role":"authenticated","aal":"aal1","app_metadata":{"role":"admin"}}';
+  aal2 text := '{"role":"authenticated","aal":"aal2","app_metadata":{"role":"admin"}}';
+  staff2 text := '{"role":"authenticated","aal":"aal2","app_metadata":{"role":"staff"}}';
+  r text;
+  v_type text;
+  v_fee int;
+BEGIN
+  -- 명단: 슈퍼관리자(aal2)만 보기·바꾸기
+  r := pg_temp.as_role('authenticated', aal2, $q$SELECT public.replace_member_companies(ARRAY['123-45-67890','1112233333','bad','1234567890'])$q$);
+  IF r <> 'rows=2' THEN RAISE EXCEPTION '슈퍼관리자 명단 교체: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal2, 'SELECT count(*) FROM public.member_companies');
+  IF r <> 'rows=2' THEN RAISE EXCEPTION '슈퍼관리자 명단 조회: %', r; END IF;
+  FOR v_type IN SELECT unnest(ARRAY['staff','aal1']) LOOP
+    r := pg_temp.as_role('authenticated', CASE v_type WHEN 'staff' THEN staff2 ELSE aal1 END, 'SELECT count(*) FROM public.member_companies');
+    IF r <> 'rows=0' THEN RAISE EXCEPTION '% 명단 조회: %', v_type, r; END IF;
+    r := pg_temp.as_role('authenticated', CASE v_type WHEN 'staff' THEN staff2 ELSE aal1 END, $q$SELECT public.replace_member_companies(ARRAY['9999999999'])$q$);
+    IF r NOT LIKE 'error=%' THEN RAISE EXCEPTION '% 명단 교체: %', v_type, r; END IF;
+    r := pg_temp.as_role('authenticated', CASE v_type WHEN 'staff' THEN staff2 ELSE aal1 END, $q$WITH x AS (INSERT INTO public.member_companies (biz_no) VALUES ('8888888888') RETURNING 1) SELECT count(*) FROM x$q$);
+    IF r NOT LIKE 'error=%' THEN RAISE EXCEPTION '% 명단 추가: %', v_type, r; END IF;
+  END LOOP;
+  r := pg_temp.as_role('anon', '{}', 'SELECT count(*) FROM public.member_companies');
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '비로그인 명단 조회: %', r; END IF;
+  r := pg_temp.as_role('anon', '{}', $q$SELECT public.replace_member_companies(ARRAY['9999999999'])$q$);
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '비로그인 명단 교체: %', r; END IF;
+  IF (SELECT count(*) FROM public.member_companies) <> 2 THEN RAISE EXCEPTION '명단이 바뀜'; END IF;
+  RAISE NOTICE '회원사 명단: 슈퍼관리자(OTP)만 보기·교체, 일반관리자·aal1·비로그인은 불가, 형식 틀린 번호는 제외(4개 중 2개)';
+
+  -- 신청: 사업자번호 필수, 명단에 있으면 회원사 교육비
+  UPDATE public.courses SET member_fee = 44000, nonmember_fee = 88000 WHERE id = '11111111-1111-1111-1111-111111111111';
+  r := pg_temp.as_role('service_role', '{}', $q$SELECT count(*) FROM (SELECT public.atomic_course_apply('11111111-1111-1111-1111-111111111111','fee-0','회사','','','','무번호','01077770000','a@b.co',true,null,null)) x$q$);
+  IF r <> 'error=P0001' THEN RAISE EXCEPTION '사업자번호 없이 신청: %', r; END IF;
+  r := pg_temp.as_role('service_role', '{}', $q$SELECT count(*) FROM (SELECT public.atomic_course_apply('11111111-1111-1111-1111-111111111111','fee-1','회사','111-22-33333','','','회원','01077770001','a@b.co',true,null,null)) x$q$);
+  IF r <> 'rows=1' THEN RAISE EXCEPTION '회원사 신청: %', r; END IF;
+  r := pg_temp.as_role('service_role', '{}', $q$SELECT count(*) FROM (SELECT public.atomic_course_apply('11111111-1111-1111-1111-111111111111','fee-2','회사','222-33-44444','','','비회원','01077770002','a@b.co',true,null,null)) x$q$);
+  IF r <> 'rows=1' THEN RAISE EXCEPTION '비회원사 신청: %', r; END IF;
+  SELECT fee_type, applied_fee INTO v_type, v_fee FROM public.education_apply WHERE req_id = 'fee-1';
+  IF v_type <> 'member' OR v_fee <> 44000 THEN RAISE EXCEPTION '회원사 판별: % %', v_type, v_fee; END IF;
+  SELECT fee_type, applied_fee INTO v_type, v_fee FROM public.education_apply WHERE req_id = 'fee-2';
+  IF v_type <> 'nonmember' OR v_fee <> 88000 THEN RAISE EXCEPTION '비회원사 판별: % %', v_type, v_fee; END IF;
+  -- 관리자가 구분 고치기(슈퍼관리자 aal2만), 일반관리자는 불가
+  r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.education_apply SET fee_type = 'member' WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
+  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 구분 변경: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal2, $q$WITH x AS (UPDATE public.education_apply SET fee_type = 'member', applied_fee = 44000 WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
+  IF r <> 'rows=1' THEN RAISE EXCEPTION '슈퍼관리자 구분 변경: %', r; END IF;
+  RAISE NOTICE '교육비 판별: 사업자번호 없으면 거절, 명단에 있으면 회원사 44,000원·없으면 비회원사 88,000원, 구분 변경은 슈퍼관리자만';
+END $$;

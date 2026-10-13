@@ -142,6 +142,9 @@ function applySession(session) {
         document.getElementById('manage-body').innerHTML = '';
         allCourses = {};
         statusCourses = [];
+        document.getElementById('member-result').textContent = '';
+        document.getElementById('member-biz').value = '';
+        document.getElementById('member-file').value = '';
     }
 }
 
@@ -151,7 +154,7 @@ function applyRole(role) {
     currentRole = role;
     document.getElementById('role-label').textContent = '(' + ROLE_LABELS[role] + ')';
     const isSuper = role === 'admin';
-    ['register', 'manage'].forEach(id => document.getElementById('tab-' + id).classList.toggle('hidden', !isSuper));
+    ['register', 'manage', 'members'].forEach(id => document.getElementById('tab-' + id).classList.toggle('hidden', !isSuper));
     if (changed && !isSuper) switchTab('status');
 }
 
@@ -278,7 +281,7 @@ async function logout() {
 function switchTab(tabId) {
     if (tabId !== 'status' && !isSuperAdmin()) tabId = 'status'; // 일반관리자는 신청자 현황만
     // 버튼 스타일 초기화
-    ['register', 'status', 'manage'].forEach(id => {
+    ['register', 'status', 'manage', 'members'].forEach(id => {
         const btn = document.getElementById('tab-' + id);
         if (btn) {
             btn.className = "py-2 px-4 text-gray-500 font-medium hover:text-gray-700 focus:outline-none transition-colors";
@@ -301,6 +304,7 @@ function switchTab(tabId) {
 
     if (tabId === 'status') fetchStatus();
     if (tabId === 'manage') fetchManage();
+    if (tabId === 'members') fetchMemberInfo();
 }
 
 // --- 기능 1: 과정 등록/수정 ---
@@ -344,7 +348,7 @@ function submitCourse() {
     if (editingCourseId) formData.append('id', editingCourseId);
 
     // 데이터 매핑
-    ['category', 'title', 'date', 'place', 'capacity', 'deadline', 'endDate', 'target', 'goal', 'content', 'instructor', 'instructorBio', 'contact', 'cost', 'paymentInfo', 'otherInfo'].forEach(field => {
+    ['category', 'title', 'date', 'place', 'capacity', 'deadline', 'endDate', 'target', 'goal', 'content', 'instructor', 'instructorBio', 'contact', 'memberFee', 'nonmemberFee', 'cost', 'paymentInfo', 'otherInfo'].forEach(field => {
         const el = document.getElementById(field);
         if (el) formData.append(field, el.value);
     });
@@ -471,12 +475,36 @@ function escapeHtml(value) {
 }
 
 const APPLICANT_COLUMNS = [
-    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['dept', '부서'],
+    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['dept', '부서'],
     ['position', '직위'], ['name', '성명'], ['phone', '연락처'], ['email', '이메일'], ['privacy', '개인정보동의']
 ];
 
+// 신청 때 자동 판별한 회원 구분(sql/16)을 화면·엑셀용 글자로
+const FEE_LABELS = { member: '회원사', nonmember: '비회원사' };
 function sortedApplicants(item) {
-    return (item.applicants || []).slice().sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+    return (item.applicants || []).map(a => ({
+        ...a,
+        feeLabel: FEE_LABELS[a.feeType] || '미확인',
+        feeText: a.appliedFee === '' || a.appliedFee === null || a.appliedFee === undefined ? '' : Number(a.appliedFee).toLocaleString('ko-KR') + '원'
+    })).sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+}
+
+// 신청 1건의 회원 구분 바꾸기(슈퍼관리자). 교육비도 그 과정의 해당 금액으로 바뀐다.
+function setFeeType(btn) {
+    const next = btn.dataset.next;
+    if (!confirm(`${btn.dataset.name}(${btn.dataset.company})의 구분을 '${FEE_LABELS[next]}'(으)로 바꾸시겠습니까?`)) return;
+    btn.disabled = true;
+    fetch(scriptURL + '?type=admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + sessionToken },
+        body: new URLSearchParams({ action: 'set_fee_type', id: btn.dataset.id, feeType: next })
+    })
+        .then(r => r.json())
+        .then(result => {
+            if (result.result === 'success') fetchStatus();
+            else { alert('⛔ 변경 실패: ' + result.msg); btn.disabled = false; }
+        })
+        .catch(err => { alert('오류 발생: ' + err); btn.disabled = false; });
 }
 
 function renderApplicantsTable(item, idx) {
@@ -497,6 +525,8 @@ function renderApplicantsTable(item, idx) {
             <td class="px-3 py-2 text-xs text-gray-500">${i + 1}</td>
             ${APPLICANT_COLUMNS.map(([key]) => `<td class="px-3 py-2 text-sm text-gray-800">${escapeHtml(app[key])}</td>`).join('')}
             ${canDelete ? `<td class="px-3 py-2"><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
+                data-next="${app.feeType === 'member' ? 'nonmember' : 'member'}" data-action="set-fee-type"
+                class="px-2 py-1 mr-1 text-xs font-bold text-blue-700 border border-blue-300 rounded hover:bg-blue-50">${app.feeType === 'member' ? '비회원사로' : '회원사로'}</button><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
                 data-action="delete-application" class="px-2 py-1 text-xs font-bold text-red-600 border border-red-300 rounded hover:bg-red-50">삭제</button></td>` : ''}
         </tr>`).join('');
     return `
@@ -712,6 +742,8 @@ function loadCourseForEdit(id) {
       if(document.getElementById('instructorBio')) document.getElementById('instructorBio').value = data.instructorBio || '';
     document.getElementById('contact').value = data.contact;
     document.getElementById('cost').value = data.cost || '';
+    document.getElementById('memberFee').value = data.memberFee ?? '';
+    document.getElementById('nonmemberFee').value = data.nonmemberFee ?? '';
     document.getElementById('paymentInfo').value = data.paymentInfo;
     document.getElementById('otherInfo').value = data.otherInfo;
 
@@ -787,6 +819,134 @@ function deleteCourse(id) {
         .catch(err => alert('오류 발생: ' + err));
 }
 
+// --- 기능 4: 회비 납부 회원사 명단 (슈퍼관리자만, sql/16) ---
+function memberPost(params) {
+    return fetch(scriptURL + '?type=admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + sessionToken },
+        body: new URLSearchParams(params)
+    }).then(r => r.json());
+}
+
+function fetchMemberInfo() {
+    memberPost({ action: 'member_info' })
+        .then(result => {
+            if (result.result !== 'success') throw new Error(result.msg);
+            document.getElementById('member-count').textContent = Number(result.count).toLocaleString('ko-KR');
+            document.getElementById('member-updated').textContent = result.updatedAt || '-';
+        })
+        .catch(err => { document.getElementById('member-count').textContent = '불러오기 실패'; console.error(err); });
+}
+
+// CSV 전체를 행·칸으로 나눈다. 따옴표 안의 쉼표·줄바꿈은 칸 안의 글자로 본다
+// (예: "(주)가나, 대구지점", 엑셀에서 두 줄로 쓴 열 제목 "2026/1↵회비 납부").
+function parseCsv(text) {
+    const rows = []; let row = []; let cur = ''; let q = false;
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (q) {
+            if (ch === '"' && text[i + 1] === '"') { cur += '"'; i++; }
+            else if (ch === '"') q = false;
+            else cur += ch;
+        } else if (ch === '"') q = true;
+        else if (ch === ',') { row.push(cur.trim()); cur = ''; }
+        else if (ch === '\n' || ch === '\r') {
+            if (ch === '\r' && text[i + 1] === '\n') i++;
+            row.push(cur.trim()); cur = '';
+            if (row.some(c => c !== '')) rows.push(row);
+            row = [];
+        } else cur += ch;
+    }
+    row.push(cur.trim());
+    if (row.some(c => c !== '')) rows.push(row);
+    return rows;
+}
+
+// 회비 납부 여부 칸의 값: 납부·완납·Y·O는 납부, 미납·N·X·빈칸 등은 제외
+function isPaidValue(v) {
+    const t = String(v || '').replace(/\s/g, '');
+    if (!t || t.includes('미')) return false;
+    return t.includes('납부') || t === '완납' || /^(Y|O|○|예)$/i.test(t);
+}
+
+// CSV에서 회비 납부 회원사의 사업자등록번호만 뽑는다.
+// - 열 제목 줄: '사업자'가 들어간 칸이 있는 첫 줄(위쪽의 문서 제목 줄은 건너뜀). 그 열의 번호만 읽는다.
+//   그런 줄이 없으면 각 줄의 첫 10자리 번호를 읽는다.
+// - '납부'가 들어간 열(예: 2026/1 회비 납부)이 있으면 그 칸이 '납부'인 행만 쓴다(미납 회사 제외).
+function extractBizNumbers(text) {
+    const all = parseCsv(text.replace(/^\uFEFF/, ''));
+    const norm = h => String(h || '').replace(/\s/g, '');
+    const headerIdx = all.findIndex(r => r.some(h => norm(h).includes('사업자')));
+    const header = headerIdx >= 0 ? all[headerIdx].map(norm) : [];
+    const col = header.findIndex(h => h.includes('사업자'));
+    const paidCol = header.findIndex((h, i) => i !== col && h.includes('납부'));
+    const rows = headerIdx >= 0 ? all.slice(headerIdx + 1) : all;
+    const out = []; let unpaid = 0; const otherValues = new Set();
+    rows.forEach(c => {
+        const target = col >= 0 ? (c[col] || '') : c.join(',');
+        const m = target.match(/(?<![0-9])([0-9]{3})-?([0-9]{2})-?([0-9]{5})(?![0-9])/);
+        if (!m) return; // 번호가 없는 줄(합계·빈 줄 등)은 세지 않는다
+        if (paidCol >= 0 && !isPaidValue(c[paidCol])) {
+            unpaid++;
+            const v = String(c[paidCol] || '').trim();
+            if (v && !v.includes('미')) otherValues.add(v);
+            return;
+        }
+        out.push(m[1] + m[2] + m[3]);
+    });
+    const total = out.length + unpaid;
+    return {
+        list: [...new Set(out)], usedColumn: col >= 0 ? header[col] : null, lines: total,
+        paidColumn: paidCol >= 0 ? header[paidCol] : null, unpaid, otherValues: [...otherValues].slice(0, 5)
+    };
+}
+
+async function replaceMembers(btn) {
+    const file = document.getElementById('member-file').files[0];
+    if (!file) return alert('CSV 파일을 선택해주세요.');
+    // 엑셀의 'CSV(쉼표로 분리)'는 한글이 EUC-KR로 저장된다. UTF-8로 읽어 깨지면 EUC-KR로 다시 읽는다.
+    const buf = await file.arrayBuffer();
+    let text = new TextDecoder('utf-8').decode(buf);
+    if (text.includes('\uFFFD')) text = new TextDecoder('euc-kr').decode(buf);
+    const { list, usedColumn, lines, paidColumn, unpaid, otherValues } = extractBizNumbers(text);
+    if (list.length === 0) return alert('파일에서 회비 납부 회원사의 사업자등록번호(10자리)를 찾지 못했습니다. 엑셀에서 CSV로 저장했는지, 납부 여부 칸이 "납부"로 적혀 있는지 확인해주세요.');
+    const masked = list.slice(0, 3).map(b => `***-**-*${b.slice(-4)}`).join(', ');
+    const how = usedColumn ? `'${usedColumn}' 열에서` : '각 줄에서';
+    const paidNote = paidColumn
+        ? `'${paidColumn}' 열이 '납부'인 회사만 골랐습니다(번호가 있는 ${lines}개 회사 중 ${unpaid}개 제외).` + (otherValues.length ? `\n※ 납부로 보지 않은 값: ${otherValues.join(', ')}` : '')
+        : '⚠️ 회비 납부 여부 열이 없습니다. 파일의 모든 회사가 회원사 교육비로 등록됩니다.\n납부한 회사만 들어 있는 명단이 맞는지 확인하세요.';
+    if (!confirm(`${how} 회원사 교육비 대상 ${list.length}개를 찾았습니다.\n${paidNote}\n예: ${masked}\n\n기존 명단을 지우고 이 명단으로 바꾸시겠습니까?`)) return;
+    btn.disabled = true;
+    try {
+        const result = await memberPost({ action: 'member_replace', bizNos: list.join(',') });
+        if (result.result !== 'success') throw new Error(result.msg);
+        alert(`✅ 회원사 명단을 ${result.count}개로 바꿨습니다.\n올린 CSV 파일은 PC에서 지워주세요.`);
+        document.getElementById('member-file').value = '';
+        fetchMemberInfo();
+    } catch (err) {
+        alert('⛔ 명단 바꾸기 실패: ' + err.message);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function memberSingle(action) {
+    const input = document.getElementById('member-biz');
+    const out = document.getElementById('member-result');
+    const bizNo = input.value.replace(/[^0-9]/g, '');
+    if (bizNo.length !== 10) return alert('사업자등록번호 10자리를 입력해주세요.');
+    if (action === 'member_delete' && !confirm('이 사업자등록번호를 회원사 명단에서 삭제하시겠습니까?')) return;
+    memberPost({ action, bizNo })
+        .then(result => {
+            if (result.result !== 'success') throw new Error(result.msg);
+            if (action === 'member_check') out.textContent = result.exists ? '✅ 명단에 있습니다 (회원사 교육비 적용)' : '❌ 명단에 없습니다 (비회원사 교육비 적용)';
+            if (action === 'member_add') out.textContent = result.already ? '이미 명단에 있습니다.' : '✅ 추가했습니다. 이후 신청부터 회원사 교육비가 적용됩니다.';
+            if (action === 'member_delete') out.textContent = result.deleted ? '🗑️ 삭제했습니다.' : '명단에 없는 번호입니다.';
+            fetchMemberInfo();
+        })
+        .catch(err => { out.textContent = '⛔ ' + err.message; });
+}
+
 function handleError(tbody, err) {
     console.error(err);
     tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-10 text-center text-red-500">데이터 로드 실패</td></tr>`;
@@ -806,7 +966,12 @@ const ACTIONS = {
     'check-all': el => checkAll(el),
     'toggle-applicants': el => toggleApplicants(Number(el.dataset.idx)),
     'edit-course': el => loadCourseForEdit(el.dataset.id),
-    'delete-course': el => deleteCourse(el.dataset.id)
+    'delete-course': el => deleteCourse(el.dataset.id),
+    'set-fee-type': el => setFeeType(el),
+    'member-replace': el => replaceMembers(el),
+    'member-check': () => memberSingle('member_check'),
+    'member-add': () => memberSingle('member_add'),
+    'member-delete': () => memberSingle('member_delete')
 };
 document.addEventListener('click', e => {
     const el = e.target.closest('[data-action]');

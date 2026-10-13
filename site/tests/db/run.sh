@@ -37,7 +37,7 @@ concurrent_apply() {
   for i in $(seq 1 "$n"); do
     ( "${PSQL[@]}" -At -c "SELECT pg_sleep(greatest(0, extract(epoch FROM '$start'::timestamptz - clock_timestamp())))" -o /dev/null \
         -c "SET ROLE service_role" \
-        -c "SELECT public.atomic_course_apply('11111111-1111-1111-1111-111111111111', 'req-$phone-$i', '회사', '', '', '', '동시$i', '$phone', 'c$i@example.com', true, NULL, NULL)" \
+        -c "SELECT public.atomic_course_apply('11111111-1111-1111-1111-111111111111', 'req-$phone-$i', '회사', '123-45-67890', '', '', '동시$i', '$phone', 'c$i@example.com', true, NULL, NULL)" \
         >/dev/null 2>&1 && echo ok || echo no ) > "$TMP/r$i" &
   done
   wait
@@ -83,6 +83,8 @@ run_sql sql/14_staff_role_access_log.sql
 run_sql sql/14_staff_role_access_log.sql
 run_sql sql/15_daily_visits.sql
 run_sql sql/15_daily_visits.sql
+run_sql sql/16_member_fee.sql
+run_sql sql/16_member_fee.sql
 
 echo "[적용 후] check_security.sql 판정 (종료일 미입력만 남아야 함)"
 check_report
