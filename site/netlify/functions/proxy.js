@@ -74,6 +74,13 @@ function isAgreed(v) {
 
 // Business errors raised by the DB function (RAISE EXCEPTION -> P0001) are written
 // for end users; everything else is logged and replaced with a generic message.
+// 서버 기록(Netlify 함수 로그)에는 오류 종류와 메시지만 남긴다.
+// DB 오류의 details·hint에는 저장하려던 행(이름·연락처 등)이 그대로 들어 있을 수 있어 남기지 않는다.
+function errInfo(err) {
+  if (!err) return '';
+  return `${err.code || err.name || 'error'}: ${String(err.message || '').slice(0, 200)}`;
+}
+
 function userMessage(err) {
   if (err && err.code === 'P0001' && err.message) return err.message;
   return GENERIC_ERROR_MSG;
@@ -137,12 +144,12 @@ async function fetchPublicCourses() {
   if (adminDbClient) {
     const { data, error } = await adminDbClient.from('courses').select('*, education_apply(id)');
     if (!error) return data.map(c => mapCourse(c, (c.education_apply || []).length));
-    console.error('Public courses via admin client failed:', error);
+    console.error('Public courses via admin client failed:', errInfo(error));
   }
 
   const { data: viewData, error: viewError } = await supabase.from('public_courses').select('*');
   if (!viewError) return viewData.map(c => mapCourse(c, c.current || 0));
-  console.error('public_courses view query failed:', viewError);
+  console.error('public_courses view query failed:', errInfo(viewError));
 
   const { data, error } = await supabase.from('courses').select('*');
   if (error) throw error;
@@ -348,7 +355,7 @@ async function handleApply(reqBody, clientIp) {
     p_lookup_id: null, p_lookup_password_hash: null
   });
   if (applyError) {
-    console.error('atomic_course_apply failed:', applyError);
+    console.error('atomic_course_apply failed:', errInfo(applyError));
     const status = applyError.code === 'P0001' ? 400 : 500;
     return jsonRes(status, { result: 'error', msg: userMessage(applyError) });
   }
@@ -401,7 +408,7 @@ async function handleLookup(reqBody) {
 
   const { data, error } = await (adminDbClient || supabase).rpc('lookup_my_applications', { p_name: name, p_phone: phone, p_email: email });
   if (error) {
-    console.error('lookup_my_applications failed:', error);
+    console.error('lookup_my_applications failed:', errInfo(error));
     const status = error.code === 'P0001' ? 429 : 500;
     return jsonRes(status, { result: 'error', msg: userMessage(error) });
   }
@@ -470,7 +477,7 @@ async function logAccess(user, role, action, detail) {
     detail: detail === undefined || detail === null ? null : String(detail).slice(0, 500)
   }]);
   if (error) {
-    console.error('Access log failed:', error);
+    console.error('Access log failed:', errInfo(error));
     return false;
   }
   return true;
@@ -541,7 +548,8 @@ exports.handler = async function(event, context) {
         const courses = await fetchPublicCourses();
         const responseData = {};
         courses.forEach(course => { responseData[course.id] = course; });
-        return jsonRes(200, responseData, { 'Cache-Control': 's-maxage=30, stale-while-revalidate=3600' });
+        // Netlify-Vary: 주소 뒤에 아무 값이나 붙여(?type=public&x=1) 캐시를 피해 서버·DB를 반복 호출하지 못하게, type 값만 캐시 구분에 쓴다.
+        return jsonRes(200, responseData, { 'Cache-Control': 's-maxage=30, stale-while-revalidate=3600', 'Netlify-Vary': 'query=type' });
       } else {
         // Admin Request: Fetch courses and full applicant list
         const { data: courses, error } = await dbClient
@@ -578,7 +586,7 @@ exports.handler = async function(event, context) {
         return jsonRes(200, responseData);
       }
     } catch (err) {
-      console.error('Database GET Error:', err);
+      console.error('Database GET Error:', errInfo(err));
       return jsonRes(500, { result: 'error', msg: GENERIC_ERROR_MSG });
     }
   }
@@ -819,7 +827,7 @@ exports.handler = async function(event, context) {
 
       return jsonRes(400, { result: 'error', msg: '알 수 없는 요청입니다.' });
     } catch (err) {
-      console.error('Database POST Error:', err);
+      console.error('Database POST Error:', errInfo(err));
       return jsonRes(500, { result: 'error', msg: userMessage(err) });
     }
   }

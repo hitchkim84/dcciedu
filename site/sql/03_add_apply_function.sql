@@ -1,3 +1,7 @@
+-- ⛔ 보관용 옛 SQL (실행 금지, ARCHIVE_GUARD): 이 파일을 다시 실행하면 2026-10에 막은 권한이 다시 열릴 수 있다.
+--    운영 DB는 sql/12 이후 파일로 맞춘다. 실수로 실행해도 아래 줄에서 멈추고 아무것도 바뀌지 않는다. ARCHIVE_GUARD
+DO $$ BEGIN RAISE EXCEPTION '보관용 옛 SQL입니다. 실행하지 마세요(권한이 다시 열립니다). 최신 상태는 sql/12 이후 파일로 맞춥니다.'; END $$; -- ARCHIVE_GUARD
+
 -- 03. 운영 DB에 신청 처리 함수 추가 (추가 전용, 기존 데이터·권한 정책은 변경하지 않음)
 -- 증상: Netlify 로그 PGRST202 "Could not find the function public.atomic_course_apply"
 -- Supabase SQL Editor에서 이 파일 전체를 한 번 실행한다. 여러 번 실행해도 안전하다.

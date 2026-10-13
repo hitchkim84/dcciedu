@@ -35,7 +35,8 @@
 - 회사 PC에 남아 있는 옛 작업 폴더(2026-10-01 이전 Antigravity 작업본)에서 수정해 올리지 않는다. 오늘 이후 고친 내용을 덮어쓸 수 있다. 직접 수정할 때는 GitHub 최신 상태를 먼저 받는다.
 - 배포 전에 `site`에서 `node --test tests/proxy.test.js`를 실행해 통과를 확인한다. SQL을 바꿨으면 `bash tests/db/run.sh`(실제 PostgreSQL 임시 DB)도 통과해야 한다. 가짜 DB 테스트 결과만으로 실제 차단을 주장하지 않는다.
 - `netlify.toml`이 `site` 안에 있으므로 Netlify Base directory는 `site`이다. 폴더 이름이나 `netlify.toml`을 바꾸면 Netlify 설정도 함께 바꿔야 한다.
-- DB 변경은 `site/sql/`에 번호를 붙인 SQL 파일로 남긴다. 여러 번 실행해도 안전하게 작성하고, Supabase SQL Editor에서 직접 실행한다.
+- DB 변경은 `site/sql/`에 번호를 붙인 SQL 파일로 남긴다. 여러 번 실행해도 안전하게 작성하고, Supabase SQL Editor에서 직접 실행한다. 옛 SQL(01~11)은 첫 줄에 실행 금지 줄(`ARCHIVE_GUARD`)이 있어 실수로 실행해도 멈춘다(2026-10-02 권한 재개방 재발 방지). 지우지 않는다.
+- 서버 로그에는 DB 오류의 종류·메시지만 남긴다(`errInfo`). 오류 객체 전체(details에 신청자 행이 들어 있을 수 있음)를 로그에 찍지 않는다.
 
 ## 3. 쉬운 수정
 - 구조는 단순하게 유지한다. 정적 HTML(`public/`), 서버 함수(`netlify/functions/`), SQL(`sql/`).

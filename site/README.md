@@ -17,7 +17,7 @@
 
 ## 3. 실행 명령 및 의존성
 - 의존성 설치: `npm install`
-- 로컬 테스트 실행: `npm start` (또는 `npx netlify dev`)
+- 로컬 실행: `npx netlify dev` (netlify-cli는 배포 빌드에 설치되지 않도록 의존성에서 뺐다. 의존성 버전은 `package-lock.json`으로 고정)
 
 ## 4. 환경 변수 안내 (.env)
 로컬 테스트 및 Netlify 대시보드(Site settings > Environment variables)에 다음 항목을 동일하게 등록해야 합니다.

@@ -1,3 +1,7 @@
+-- ⛔ 보관용 옛 SQL (실행 금지, ARCHIVE_GUARD): 이 파일을 다시 실행하면 2026-10에 막은 권한이 다시 열릴 수 있다.
+--    운영 DB는 sql/12 이후 파일로 맞춘다. 실수로 실행해도 아래 줄에서 멈추고 아무것도 바뀌지 않는다. ARCHIVE_GUARD
+DO $$ BEGIN RAISE EXCEPTION '보관용 옛 SQL입니다. 실행하지 마세요(권한이 다시 열립니다). 최신 상태는 sql/12 이후 파일로 맞춥니다.'; END $$; -- ARCHIVE_GUARD
+
 -- 주의(2026-10): 이 파일의 관리자 규칙에는 OTP(aal2) 조건이 없다. 다시 실행하지 말 것. 실행했다면 sql/12를 다시 실행한다.
 -- 1. 조회 기능 및 멱등성 컬럼 추가
 ALTER TABLE education_apply ADD COLUMN IF NOT EXISTS lookup_id text UNIQUE;

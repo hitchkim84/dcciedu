@@ -149,6 +149,7 @@ let lastRpcParams = null;
 let lastRpcClientKey = null;
 let lastLookupClientKey = null;
 let visitClientKeys = [];
+let atomicCourseApplyHook = null; // 시험용: 신청 함수 실패 상황 흉내
 function atomicCourseApply(p) {
   lastRpcParams = p;
   const existing = db.education_apply.find(a => a.req_id === p.p_req_id);
@@ -193,7 +194,7 @@ function createClient(url, key, opts = {}) {
   const client = { key, headers: (opts.global && opts.global.headers) || {} };
   client.from = table => makeQuery(client, table);
   client.rpc = async (name, params) => {
-    if (name === 'atomic_course_apply') { lastRpcClientKey = client.key; return atomicCourseApply(params); }
+    if (name === 'atomic_course_apply') { lastRpcClientKey = client.key; return atomicCourseApplyHook ? atomicCourseApplyHook(params) : atomicCourseApply(params); }
     if (name === 'replace_member_companies') {
       if (roleOf(client) !== 'admin') return raise('슈퍼관리자(OTP 인증)만 회원사 명단을 바꿀 수 있습니다.');
       const list = [...new Set(params.p_biz_nos.map(x => String(x).replace(/\D/g, '')).filter(x => /^\d{10}$/.test(x)))];
@@ -1027,4 +1028,37 @@ test('pay notice: super admin only, needs template and account, failures are rep
   const res = await adminPost(handler, { action: 'send_pay_notice', ids: ids[1] });
   assert.deepStrictEqual([res.json.sent, res.json.failed], [0, 1]);
   assert.ok(!db.education_apply.find(a => a.id === ids[1]).pay_notice_sent_at);
+});
+
+// ---- 정밀점검(2026-10-13) 보강 ----
+test('logs: DB error details (which can hold the failing row) are never written to server logs', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const origRpc = createClient('u', 'service').rpc; // 참고용(가짜 클라이언트는 호출마다 새로 만듦)
+  const logs = [];
+  const origErr = console.error;
+  console.error = (...a) => logs.push(a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' '));
+  try {
+    db.courses[0].capacity = 0;
+    // 신청 함수가 제약 위반으로 실패한 상황: details에 신청자 행이 들어 있음
+    const orig = atomicCourseApplyHook;
+    atomicCourseApplyHook = () => ({ data: null, error: { code: '23514', message: 'new row violates check constraint', details: 'Failing row contains (홍길동, 010-1234-5678, hong@example.com)' } });
+    const res = await call(handler, { method: 'POST', body: applyForm() });
+    atomicCourseApplyHook = orig;
+    assert.strictEqual(res.statusCode, 500);
+    assert.ok(!JSON.stringify(res.json).includes('010-1234-5678'));
+  } finally { console.error = origErr; }
+  const all = logs.join('\n');
+  assert.ok(all.includes('23514'), all);
+  assert.ok(!all.includes('010-1234-5678') && !all.includes('hong@example.com'), all);
+  void origRpc;
+});
+
+test('public course list: cache key uses only the type parameter (Netlify-Vary)', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const res = await call(handler, { query: { type: 'public', bust: String(Math.random()) } });
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(res.headers['Netlify-Vary'], 'query=type');
+  assert.match(res.headers['Cache-Control'], /s-maxage=30/);
+  const admin = await call(handler, { type: 'admin', token: ADMIN_TOKEN });
+  assert.strictEqual(admin.headers['Cache-Control'], 'no-store');
 });

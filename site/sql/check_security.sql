@@ -106,4 +106,19 @@ UNION ALL
 SELECT '8.조회기록', 'lookup_log', '전체 ' || count(*) || '건, 하루 지난 기록 ' || count(*) FILTER (WHERE created_at < now() - interval '1 day') || '건',
        CASE WHEN count(*) FILTER (WHERE created_at < now() - interval '2 days') = 0 THEN '정상' ELSE '확인 필요(정리 미실행)' END
   FROM lookup_log
+UNION ALL
+-- 9. 로그인 계정: 관리자 등급(admin·staff)이 없는 계정이 있으면 외부 가입·침입 흔적일 수 있다(이메일은 보여주지 않고 수만 센다)
+SELECT '9.계정', coalesce(u.raw_app_meta_data ->> 'role', '(등급 없음)'), count(*)::text || '개',
+       CASE WHEN (u.raw_app_meta_data ->> 'role') IN ('admin', 'staff') THEN '정상'
+            ELSE '확인 필요(등급 없는 계정: Authentication → Users에서 모르는 계정인지 확인)' END
+  FROM auth.users u
+ GROUP BY 2, 4
+UNION ALL
+-- 10. 슈퍼관리자 OTP: 모든 슈퍼관리자에게 확인된(verified) OTP가 있어야 한다
+SELECT '10.OTP', 'admin', count(*)::text || '명 중 OTP 등록 ' ||
+       count(*) FILTER (WHERE EXISTS (SELECT 1 FROM auth.mfa_factors f WHERE f.user_id = u.id AND f.status = 'verified'))::text || '명',
+       CASE WHEN count(*) = count(*) FILTER (WHERE EXISTS (SELECT 1 FROM auth.mfa_factors f WHERE f.user_id = u.id AND f.status = 'verified'))
+            THEN '정상' ELSE '확인 필요(OTP 없는 슈퍼관리자)' END
+  FROM auth.users u
+ WHERE (u.raw_app_meta_data ->> 'role') = 'admin'
 ORDER BY 1, 2;

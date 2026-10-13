@@ -9,7 +9,10 @@ CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS
   $$ SELECT coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;
 GRANT EXECUTE ON FUNCTION auth.jwt() TO anon, authenticated, service_role;
 CREATE TABLE auth.users (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), email text, raw_app_meta_data jsonb);
-INSERT INTO auth.users (email) VALUES ('관리자이메일@example.com');
+INSERT INTO auth.users (email, raw_app_meta_data) VALUES ('관리자이메일@example.com', '{"role":"admin"}');
+-- OTP(인증 앱) 등록 정보 흉내(운영 Supabase의 auth.mfa_factors와 같은 칸만)
+CREATE TABLE auth.mfa_factors (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, factor_type text, status text);
+INSERT INTO auth.mfa_factors (user_id, factor_type, status) SELECT id, 'totp', 'verified' FROM auth.users;
 -- Supabase 기본값처럼 public의 새 표·함수 권한을 API 역할에 모두 준다(최악의 경우를 가정)
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
