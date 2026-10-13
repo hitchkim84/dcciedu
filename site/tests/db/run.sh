@@ -85,6 +85,8 @@ run_sql sql/15_daily_visits.sql
 run_sql sql/15_daily_visits.sql
 run_sql sql/16_member_fee.sql
 run_sql sql/16_member_fee.sql
+run_sql sql/17_pay_notice.sql
+run_sql sql/17_pay_notice.sql
 
 echo "[적용 후] check_security.sql 판정 (종료일 미입력만 남아야 함)"
 check_report

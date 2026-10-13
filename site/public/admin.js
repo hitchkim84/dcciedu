@@ -142,6 +142,7 @@ function applySession(session) {
         document.getElementById('manage-body').innerHTML = '';
         allCourses = {};
         statusCourses = [];
+        openCourseIds.clear();
         document.getElementById('member-result').textContent = '';
         document.getElementById('member-biz').value = '';
         document.getElementById('member-file').value = '';
@@ -475,7 +476,7 @@ function escapeHtml(value) {
 }
 
 const APPLICANT_COLUMNS = [
-    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['dept', '부서'],
+    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['payNoticeAt', '입금안내'], ['dept', '부서'],
     ['position', '직위'], ['name', '성명'], ['phone', '연락처'], ['email', '이메일'], ['privacy', '개인정보동의']
 ];
 
@@ -487,6 +488,51 @@ function sortedApplicants(item) {
         feeLabel: FEE_LABELS[a.feeType] || '미확인',
         feeText: a.appliedFee === '' || a.appliedFee === null || a.appliedFee === undefined ? '' : Number(a.appliedFee).toLocaleString('ko-KR') + '원'
     })).sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+}
+
+// 교육비 입금 안내 알림톡 보내기(슈퍼관리자). items: [{id, name, fee, label, sent}]
+function sendPayNotice(items, btn) {
+    if (items.length === 0) return alert('입금 안내를 보낼 신청을 체크해주세요.');
+    if (items.length > 50) return alert('입금 안내는 한 번에 50건까지 보낼 수 있습니다.');
+    const noFee = items.filter(x => !x.fee || x.label === '미확인');
+    const ready = items.filter(x => !noFee.includes(x));
+    if (ready.length === 0) return alert('교육비나 구분(회원사/비회원사)이 없는 신청입니다.\n과정 교육비를 입력하거나 구분을 지정한 뒤 보내주세요.');
+    const sentBefore = ready.filter(x => x.sent);
+    const list = ready.slice(0, 10).map(x => `- ${x.name}: ${x.fee} (${x.label})${x.sent ? ' ※ ' + x.sent + ' 발송함' : ''}`).join('\n');
+    const more = ready.length > 10 ? `\n외 ${ready.length - 10}건` : '';
+    const skipNote = noFee.length ? `\n\n교육비·구분이 없는 ${noFee.length}건은 보내지 않습니다.` : '';
+    if (!confirm(`입금 안내 알림톡 ${ready.length}건을 보내시겠습니까?\n\n${list}${more}${skipNote}`)) return;
+    let force = '0';
+    if (sentBefore.length) {
+        if (!confirm(`이 중 ${sentBefore.length}건은 이미 입금 안내를 보낸 신청입니다.\n다시 보내시겠습니까?\n(취소를 누르면 보내지 않은 신청에만 보냅니다)`)) {
+            if (sentBefore.length === ready.length) return;
+        } else force = '1';
+    }
+    btn.disabled = true;
+    fetch(scriptURL + '?type=admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + sessionToken },
+        body: new URLSearchParams({ action: 'send_pay_notice', ids: ready.map(x => x.id).join(','), force })
+    })
+        .then(r => r.json())
+        .then(result => {
+            if (result.result !== 'success') throw new Error(result.msg);
+            const sk = result.skipped || {};
+            const notes = [
+                result.failed ? `실패 ${result.failed}건 (잠시 후 다시 보내주세요)` : '',
+                sk.already ? `이미 보낸 ${sk.already}건 제외` : '',
+                sk.noFee ? `교육비 없음 ${sk.noFee}건 제외` : '',
+                sk.badPhone ? `휴대폰 번호 오류 ${sk.badPhone}건 제외` : ''
+            ].filter(Boolean).join('\n');
+            alert(`📨 입금 안내 ${result.sent}건을 보냈습니다.${notes ? '\n' + notes : ''}`);
+            fetchStatus();
+        })
+        .catch(err => alert('⛔ 입금 안내 실패: ' + err.message))
+        .finally(() => { btn.disabled = false; });
+}
+
+function payItem(el) {
+    return { id: el.dataset.id, name: el.dataset.name, fee: el.dataset.fee, label: el.dataset.label, sent: el.dataset.sent };
 }
 
 // 신청 1건의 회원 구분 바꾸기(슈퍼관리자). 교육비도 그 과정의 해당 금액으로 바뀐다.
@@ -521,10 +567,12 @@ function renderApplicantsTable(item, idx) {
         + (canDelete ? '<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">관리</th>' : '');
     const rows = apps.map((app, i) => `
         <tr class="border-t">
-            ${canDelete ? `<td class="px-3 py-2"><input type="checkbox" class="app-check" data-course="${idx}" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}" aria-label="선택"></td>` : ''}
+            ${canDelete ? `<td class="px-3 py-2"><input type="checkbox" class="app-check" data-course="${idx}" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}" data-fee="${escapeHtml(app.feeText)}" data-label="${escapeHtml(app.feeLabel)}" data-sent="${escapeHtml(app.payNoticeAt)}" aria-label="선택"></td>` : ''}
             <td class="px-3 py-2 text-xs text-gray-500">${i + 1}</td>
             ${APPLICANT_COLUMNS.map(([key]) => `<td class="px-3 py-2 text-sm text-gray-800">${escapeHtml(app[key])}</td>`).join('')}
             ${canDelete ? `<td class="px-3 py-2"><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
+                data-fee="${escapeHtml(app.feeText)}" data-label="${escapeHtml(app.feeLabel)}" data-sent="${escapeHtml(app.payNoticeAt)}" data-action="send-pay-notice"
+                class="px-2 py-1 mr-1 text-xs font-bold text-green-700 border border-green-300 rounded hover:bg-green-50">입금안내</button><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
                 data-next="${app.feeType === 'member' ? 'nonmember' : 'member'}" data-action="set-fee-type"
                 class="px-2 py-1 mr-1 text-xs font-bold text-blue-700 border border-blue-300 rounded hover:bg-blue-50">${app.feeType === 'member' ? '비회원사로' : '회원사로'}</button><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
                 data-action="delete-application" class="px-2 py-1 text-xs font-bold text-red-600 border border-red-300 rounded hover:bg-red-50">삭제</button></td>` : ''}
@@ -533,6 +581,8 @@ function renderApplicantsTable(item, idx) {
         <div class="flex justify-between items-center mb-2">
             <span class="text-sm font-bold text-gray-700">신청자 명단 (${apps.length}명)</span>
             <div>
+                ${canDelete ? `<button type="button" data-action="send-pay-selected" data-idx="${idx}"
+                    class="px-3 py-1 mr-2 text-xs font-bold text-green-700 border border-green-300 rounded hover:bg-green-50">선택 입금안내</button>` : ''}
                 ${canDelete ? `<button type="button" data-action="delete-selected" data-idx="${idx}"
                     class="px-3 py-1 mr-2 text-xs font-bold text-red-600 border border-red-300 rounded hover:bg-red-50">선택 삭제</button>` : ''}
                 <button type="button" data-action="download-csv" data-idx="${idx}"
@@ -547,13 +597,17 @@ function renderApplicantsTable(item, idx) {
         </div>`;
 }
 
-function toggleApplicants(idx) {
+// 펼친 과정은 새로고침(삭제·입금안내 후 목록 다시 불러오기) 뒤에도 펼친 채로 둔다.
+const openCourseIds = new Set();
+function toggleApplicants(idx, forceOpen) {
     const row = document.getElementById('applicants-row-' + idx);
     const arrow = document.getElementById('applicants-arrow-' + idx);
     if (!row) return;
-    const willOpen = row.classList.contains('hidden');
+    const willOpen = forceOpen || row.classList.contains('hidden');
     row.classList.toggle('hidden', !willOpen);
     if (arrow) arrow.textContent = willOpen ? '▼' : '▶';
+    const course = statusCourses[idx];
+    if (course) { if (willOpen) openCourseIds.add(course.id); else openCourseIds.delete(course.id); }
 }
 
 // 엑셀 수식으로 해석될 수 있는 값(=, +, -, @ 시작)은 앞에 '를 붙여 글자로 저장
@@ -663,6 +717,7 @@ function renderStatusTable(data, tbody) {
             </tr>`;
     });
     tbody.innerHTML = html;
+    courses.forEach((item, idx) => { if (openCourseIds.has(item.id)) toggleApplicants(idx, true); });
 }
 
 // --- 기능 3: 관리 (수정/삭제) ---
@@ -968,6 +1023,8 @@ const ACTIONS = {
     'edit-course': el => loadCourseForEdit(el.dataset.id),
     'delete-course': el => deleteCourse(el.dataset.id),
     'set-fee-type': el => setFeeType(el),
+    'send-pay-notice': el => sendPayNotice([payItem(el)], el),
+    'send-pay-selected': el => sendPayNotice([...document.querySelectorAll(`.app-check[data-course="${el.dataset.idx}"]:checked`)].map(payItem), el),
     'member-replace': el => replaceMembers(el),
     'member-check': () => memberSingle('member_check'),
     'member-add': () => memberSingle('member_add'),

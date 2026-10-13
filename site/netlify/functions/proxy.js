@@ -201,30 +201,20 @@ const CAPTCHA_MSG = {
 // 발송이 실패해도 신청은 이미 저장됐으므로 신청 결과에는 영향을 주지 않는다.
 // 템플릿 변수 이름(#{...})은 솔라피에 등록·승인된 템플릿 문구와 똑같아야 한다.
 const SOLAPI_SEND_URL = 'https://api.solapi.com/messages/v4/send';
-async function sendApplyAlimtalk({ name, phoneDigits, course }) {
+function solapiReady(templateId) {
+  return !!(process.env.SOLAPI_API_KEY && process.env.SOLAPI_API_SECRET && process.env.SOLAPI_PFID && templateId);
+}
+// 알림톡 1건 발송. 결과: 'sent' | 'failed' | 'skipped'(키·템플릿 설정 없음)
+async function solapiSend(templateId, phoneDigits, variables) {
   const key = process.env.SOLAPI_API_KEY;
   const secret = process.env.SOLAPI_API_SECRET;
   const pfId = process.env.SOLAPI_PFID;
-  const templateId = process.env.SOLAPI_TEMPLATE_ID;
-  if (!key || !secret || !pfId || !templateId) return 'skipped';
+  if (!solapiReady(templateId)) return 'skipped';
   const sender = (process.env.SOLAPI_SENDER || '').replace(/\D/g, ''); // 있으면 알림톡 실패 시 문자로 대신 발송
   const date = new Date().toISOString();
   const salt = crypto.randomBytes(16).toString('hex');
   const signature = crypto.createHmac('sha256', secret).update(date + salt).digest('hex');
-  const message = {
-    to: phoneDigits,
-    kakaoOptions: {
-      pfId,
-      templateId,
-      disableSms: !sender,
-      variables: {
-        '#{이름}': name,
-        '#{과정명}': course.title || '',
-        '#{교육일시}': course.date || '',
-        '#{장소}': course.place || '교육센터 홈페이지 안내 참고'
-      }
-    }
-  };
+  const message = { to: phoneDigits, kakaoOptions: { pfId, templateId, disableSms: !sender, variables } };
   if (sender) message.from = sender;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 3000);
@@ -250,6 +240,36 @@ async function sendApplyAlimtalk({ name, phoneDigits, course }) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function sendApplyAlimtalk({ name, phoneDigits, course }) {
+  return solapiSend(process.env.SOLAPI_TEMPLATE_ID, phoneDigits, {
+    '#{이름}': name,
+    '#{과정명}': course.title || '',
+    '#{교육일시}': course.date || '',
+    '#{장소}': course.place || '교육센터 홈페이지 안내 참고'
+  });
+}
+
+// 교육비 입금 안내 알림톡(관리자 버튼). 템플릿: SOLAPI_PAY_TEMPLATE_ID, 계좌: PAYMENT_ACCOUNT(예: 은행 계좌번호 예금주)
+// 보내는 정보: 성명·휴대폰·과정명·교육일시·교육비·회원사/비회원사 구분·입금계좌·입금기한(교육일 전날)
+const FEE_TYPE_LABEL = { member: '회원사', nonmember: '비회원사' };
+const MAX_PAY_NOTICE = 50;
+// 과정 일시 문구(예: "2026. 11. 12(목) 09:30~12:30")에서 교육일 전날을 "2026. 11. 11(수)"로
+function dueDateText(courseDate) {
+  const m = String(courseDate || '').match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+  if (!m) return '교육일 전날';
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] - 1));
+  if (isNaN(d)) return '교육일 전날';
+  return `${d.getUTCFullYear()}. ${d.getUTCMonth() + 1}. ${d.getUTCDate()}(${'일월화수목금토'[d.getUTCDay()]})`;
+}
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) { const i = next++; out[i] = await fn(items[i]); }
+  }));
+  return out;
 }
 
 async function handleApply(reqBody, clientIp) {
@@ -545,6 +565,7 @@ exports.handler = async function(event, context) {
             privacy: app.agree_privacy ? "Y" : "N",
             feeType: app.fee_type || "",
             appliedFee: app.applied_fee ?? "",
+            payNoticeAt: app.pay_notice_sent_at ? formatTimestamp(app.pay_notice_sent_at) : "",
             memberType: "",
             feeStatus: "",
             councilType: ""
@@ -635,6 +656,56 @@ exports.handler = async function(event, context) {
         if (!data || data.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 신청을 찾을 수 없습니다.' });
         await logAccess(adminUser, adminRole, 'set_fee_type', `신청 ${id}, ${feeType}`);
         return jsonRes(200, { result: 'success', feeType, appliedFee });
+      }
+
+      // 교육비 입금 안내 알림톡 보내기(슈퍼관리자만, 한 번에 최대 50건). 이미 보낸 신청은 force=1일 때만 다시 보낸다.
+      if (action === 'send_pay_notice') {
+        const ids = [...new Set(str(reqBody.ids).split(',').map(x => x.trim()).filter(Boolean))];
+        if (ids.length === 0 || ids.length > MAX_PAY_NOTICE || !ids.every(id => UUID_RE.test(id))) {
+          return jsonRes(400, { result: 'error', msg: `입금 안내는 한 번에 1~${MAX_PAY_NOTICE}건 보낼 수 있습니다.` });
+        }
+        const account = str(process.env.PAYMENT_ACCOUNT);
+        if (!solapiReady(process.env.SOLAPI_PAY_TEMPLATE_ID) || !account || !adminDbClient) {
+          return jsonRes(503, { result: 'error', msg: '입금 안내 설정(템플릿·입금계좌)이 아직 없습니다.' });
+        }
+        const force = str(reqBody.force) === '1';
+        const { data: apps, error: appsError } = await dbClient.from('education_apply')
+          .select('id, name, phone, course_id, fee_type, applied_fee, pay_notice_sent_at').in('id', ids);
+        if (appsError) throw appsError;
+        if (!apps || apps.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 신청을 찾을 수 없습니다.' });
+        const courseIds = [...new Set(apps.map(a => a.course_id))];
+        const { data: courses, error: coursesError } = await dbClient.from('courses').select('id, title, date').in('id', courseIds);
+        if (coursesError) throw coursesError;
+        const courseById = Object.fromEntries((courses || []).map(c => [c.id, c]));
+        const skipped = { noFee: 0, already: 0, badPhone: 0 };
+        const targets = apps.filter(a => {
+          if (!FEE_TYPE_LABEL[a.fee_type] || a.applied_fee === null || a.applied_fee === undefined) { skipped.noFee++; return false; }
+          if (a.pay_notice_sent_at && !force) { skipped.already++; return false; }
+          const digits = String(a.phone || '').replace(/\D/g, '');
+          if (digits.length < 9 || digits.length > 11) { skipped.badPhone++; return false; }
+          return true;
+        });
+        const results = await mapLimit(targets, 5, async a => {
+          const c = courseById[a.course_id] || {};
+          const r = await solapiSend(process.env.SOLAPI_PAY_TEMPLATE_ID, String(a.phone).replace(/\D/g, ''), {
+            '#{이름}': a.name || '',
+            '#{과정명}': c.title || '',
+            '#{교육일시}': c.date || '',
+            '#{교육비}': Number(a.applied_fee).toLocaleString('ko-KR') + '원',
+            '#{구분}': FEE_TYPE_LABEL[a.fee_type],
+            '#{입금계좌}': account,
+            '#{입금기한}': dueDateText(c.date)
+          });
+          return { id: a.id, r };
+        });
+        const sentIds = results.filter(x => x.r === 'sent').map(x => x.id);
+        if (sentIds.length) {
+          const { error: markError } = await adminDbClient.from('education_apply').update({ pay_notice_sent_at: new Date().toISOString() }).in('id', sentIds);
+          if (markError) console.error('pay_notice_sent_at update failed:', markError.message);
+        }
+        const failed = results.length - sentIds.length;
+        await logAccess(adminUser, adminRole, 'send_pay_notice', `요청 ${ids.length}건, 발송 ${sentIds.length}건, 실패 ${failed}건`);
+        return jsonRes(200, { result: 'success', sent: sentIds.length, failed, skipped });
       }
 
       // 회비 납부 회원사 명단(sql/16). 슈퍼관리자(OTP 통과)만, DB 규칙에서도 확인한다.
