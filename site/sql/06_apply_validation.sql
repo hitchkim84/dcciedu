@@ -1,3 +1,7 @@
+-- ⛔ 보관용 옛 SQL (실행 금지, ARCHIVE_GUARD): 이 파일을 다시 실행하면 2026-10에 막은 권한이 다시 열릴 수 있다.
+--    운영 DB는 sql/12 이후 파일로 맞춘다. 실수로 실행해도 아래 줄에서 멈추고 아무것도 바뀌지 않는다. ARCHIVE_GUARD
+DO $$ BEGIN RAISE EXCEPTION '보관용 옛 SQL입니다. 실행하지 마세요(권한이 다시 열립니다). 최신 상태는 sql/12 이후 파일로 맞춥니다.'; END $$; -- ARCHIVE_GUARD
+
 -- 06. 신청 처리 함수(atomic_course_apply)에 입력값 검증과 반복 신청 제한 추가
 -- (2026-10) 함수 내용은 sql/12가 대체한다(동시 요청 잠금, search_path 고정). 이 파일을 다시 실행했다면 sql/12를 다시 실행한다.
 -- 목적: 홈페이지 서버(proxy.js)를 거치지 않고 Supabase API로 함수를 직접 호출해도

@@ -14,7 +14,8 @@ trap cleanup EXIT
 "$PGBIN/pg_ctl" -D "$TMP/data" -o "-p $PORT -k $TMP -c listen_addresses='' -c max_connections=100" -l "$TMP/log" -w start >/dev/null
 export PGOPTIONS="-c client_min_messages=warning"
 PSQL=("$PGBIN/psql" -h "$TMP" -p "$PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q -X)
-run_sql() { sed '/CREATE EXTENSION IF NOT EXISTS pg_cron/d' "$1" | "${PSQL[@]}" -o /dev/null; }
+# 옛 SQL(01~11)은 실행 금지 줄(ARCHIVE_GUARD)이 있다. 이 시험은 운영 DB가 거쳐 온 과정을 재현하려고 그 줄을 빼고 실행한다.
+run_sql() { sed -e '/CREATE EXTENSION IF NOT EXISTS pg_cron/d' -e '/ARCHIVE_GUARD/d' "$1" | "${PSQL[@]}" -o /dev/null; }
 
 fail=0
 pass() { echo "  통과: $1"; }
@@ -85,6 +86,8 @@ run_sql sql/15_daily_visits.sql
 run_sql sql/15_daily_visits.sql
 run_sql sql/16_member_fee.sql
 run_sql sql/16_member_fee.sql
+run_sql sql/17_pay_notice.sql
+run_sql sql/17_pay_notice.sql
 
 echo "[적용 후] check_security.sql 판정 (종료일 미입력만 남아야 함)"
 check_report
@@ -104,5 +107,22 @@ if PGOPTIONS="-c client_min_messages=notice" "${PSQL[@]}" -f tests/db/checks.sql
 else
   bad "checks.sql"; cat "$TMP/checks.log"
 fi
+
+echo "[옛 SQL 재실행 방지] 실행 금지 줄이 있는 그대로 다시 실행해도 권한이 열리지 않는지"
+guard_ok=1
+for f in sql/0*.sql sql/10_*.sql sql/11_*.sql; do
+  if ! grep -q ARCHIVE_GUARD "$f"; then bad "$f 에 실행 금지 줄 없음"; guard_ok=0; continue; fi
+  # SQL Editor처럼 파일 전체를 한 번에 보낸다(-c). 첫 줄에서 오류로 멈춰야 한다.
+  if "${PSQL[@]}" -o /dev/null -c "$(sed '/CREATE EXTENSION IF NOT EXISTS pg_cron/d' "$f")" 2>/dev/null; then bad "$f 가 멈추지 않고 실행됨"; guard_ok=0; fi
+done
+check_report
+after_guard=$(grep '확인 필요' "$TMP/check.txt" | grep -vc '종료일 미입력' || true)
+[ "$guard_ok" = "1" ] && [ "$after_guard" = "0" ] && pass "옛 SQL 11개 모두 첫 줄에서 멈춤, 실행 후에도 check_security 정상" || bad "옛 SQL 재실행 후 확인 필요 $after_guard 건"
+
+echo "[계정 점검] 등급 없는 계정(외부 가입)·OTP 없는 슈퍼관리자를 check_security가 잡는지"
+"${PSQL[@]}" -o /dev/null -c "INSERT INTO auth.users (email) VALUES ('stranger@example.com'); INSERT INTO auth.users (email, raw_app_meta_data) VALUES ('nootp@example.com', '{\"role\":\"admin\"}')"
+check_report
+grep -q '9.계정 | (등급 없음) | 1개 | 확인 필요' "$TMP/check.txt" && grep -q '10.OTP | admin | 2명 중 OTP 등록 1명 | 확인 필요' "$TMP/check.txt" \
+  && pass "등급 없는 계정 1개, OTP 없는 슈퍼관리자 1명을 '확인 필요'로 표시" || { bad "계정 점검"; grep -E '^(9|10)\.' "$TMP/check.txt"; }
 
 [ "$fail" = "0" ] && echo "결과: 모두 통과" || { echo "결과: 실패 있음"; exit 1; }

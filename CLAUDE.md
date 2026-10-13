@@ -15,8 +15,8 @@
 - `SUPABASE_SERVICE_ROLE_KEY`는 서버 함수(`netlify/functions/`)에서만 쓰고, 브라우저로 내려보내지 않는다.
 - 사용자 입력은 서버에서 검증하고, 화면에 출력할 때는 이스케이프한다(XSS 방지).
 - 변경 후에는 개인정보가 새로 노출되는 경로가 생기지 않았는지 확인한다.
-- 신청 정보는 Supabase DB에만 저장한다. 구글 시트 등 외부로 복사하지 않는다(2026-10 연동 제거). 예외: 신청 접수 안내 알림톡(솔라피)에는 성명·휴대폰·과정명·교육일시·장소만 보낸다(회사명·사업자번호·이메일은 보내지 않음). 개인정보처리방침 제4조 위탁 표에 적혀 있어야 한다.
-- 알림톡 키(`SOLAPI_*`)는 Netlify에서 Secret·Production 전용으로 둔다. 발송 실패는 신청 결과에 영향을 주지 않는다.
+- 신청 정보는 Supabase DB에만 저장한다. 구글 시트 등 외부로 복사하지 않는다(2026-10 연동 제거). 예외: 신청 접수 안내 알림톡(솔라피)에는 성명·휴대폰·과정명·교육일시·장소만, 교육비 입금 안내 알림톡(관리자 '입금안내' 버튼, 슈퍼관리자만, `sql/17`)에는 성명·휴대폰·과정명·교육일시·교육비·회원사/비회원사 구분·입금계좌·입금기한만 보낸다(회사명·사업자번호·이메일은 보내지 않음). 개인정보처리방침 제4조 위탁 표에 적혀 있어야 한다.
+- 알림톡 키(`SOLAPI_*`)는 Netlify에서 Secret·Production 전용으로 둔다. 입금계좌는 코드에 넣지 않고 Netlify 환경변수 `PAYMENT_ACCOUNT`에 둔다. 발송 실패는 신청 결과에 영향을 주지 않는다.
 - 입력값 검증은 서버(`proxy.js`)와 DB 함수(`atomic_course_apply`) 양쪽에 같은 기준으로 둔다.
 - 가짜 신청 방지: 허니팟 칸 + Cloudflare Turnstile(`TURNSTILE_SITE_KEY`·`TURNSTILE_SECRET`). 키가 없거나 Cloudflare 확인이 안 되면 신청을 거절한다(비상시에만 `TURNSTILE_DISABLED=true`). 토큰의 호스트(dcciedu.co.kr)와 action(`apply`)도 확인한다. Cloudflare에는 확인 토큰·IP만 보내고 신청 내용은 보내지 않는다. 신청·조회 함수는 서버 키로만 호출(`sql/10`, `sql/13`).
 - 신청 확인(홈페이지 '신청 확인'): 성명·휴대폰·이메일 3가지가 모두 일치할 때만 과정명·교육일시·신청일시를 보여준다. 본인 인증이 아니므로(세 가지를 아는 사람은 조회 가능) 개인정보는 돌려주지 않고, 틀려도 같은 답을 준다. 반복 조회 제한과 일치 확인은 DB 함수 `lookup_my_applications`(`sql/12`)에서 잠금 후 한다.
@@ -35,7 +35,8 @@
 - 회사 PC에 남아 있는 옛 작업 폴더(2026-10-01 이전 Antigravity 작업본)에서 수정해 올리지 않는다. 오늘 이후 고친 내용을 덮어쓸 수 있다. 직접 수정할 때는 GitHub 최신 상태를 먼저 받는다.
 - 배포 전에 `site`에서 `node --test tests/proxy.test.js`를 실행해 통과를 확인한다. SQL을 바꿨으면 `bash tests/db/run.sh`(실제 PostgreSQL 임시 DB)도 통과해야 한다. 가짜 DB 테스트 결과만으로 실제 차단을 주장하지 않는다.
 - `netlify.toml`이 `site` 안에 있으므로 Netlify Base directory는 `site`이다. 폴더 이름이나 `netlify.toml`을 바꾸면 Netlify 설정도 함께 바꿔야 한다.
-- DB 변경은 `site/sql/`에 번호를 붙인 SQL 파일로 남긴다. 여러 번 실행해도 안전하게 작성하고, Supabase SQL Editor에서 직접 실행한다.
+- DB 변경은 `site/sql/`에 번호를 붙인 SQL 파일로 남긴다. 여러 번 실행해도 안전하게 작성하고, Supabase SQL Editor에서 직접 실행한다. 옛 SQL(01~11)은 첫 줄에 실행 금지 줄(`ARCHIVE_GUARD`)이 있어 실수로 실행해도 멈춘다(2026-10-02 권한 재개방 재발 방지). 지우지 않는다.
+- 서버 로그에는 DB 오류의 종류·메시지만 남긴다(`errInfo`). 오류 객체 전체(details에 신청자 행이 들어 있을 수 있음)를 로그에 찍지 않는다.
 
 ## 3. 쉬운 수정
 - 구조는 단순하게 유지한다. 정적 HTML(`public/`), 서버 함수(`netlify/functions/`), SQL(`sql/`).

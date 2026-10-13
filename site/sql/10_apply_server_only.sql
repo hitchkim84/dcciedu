@@ -1,3 +1,7 @@
+-- ⛔ 보관용 옛 SQL (실행 금지, ARCHIVE_GUARD): 이 파일을 다시 실행하면 2026-10에 막은 권한이 다시 열릴 수 있다.
+--    운영 DB는 sql/12 이후 파일로 맞춘다. 실수로 실행해도 아래 줄에서 멈추고 아무것도 바뀌지 않는다. ARCHIVE_GUARD
+DO $$ BEGIN RAISE EXCEPTION '보관용 옛 SQL입니다. 실행하지 마세요(권한이 다시 열립니다). 최신 상태는 sql/12 이후 파일로 맞춥니다.'; END $$; -- ARCHIVE_GUARD
+
 -- 10. 신청 함수를 서버(Netlify 함수)만 호출하도록 제한
 -- 목적: 홈페이지에 공개된 키(anon)로 Supabase에 직접 신청을 보내 로봇 확인(Turnstile)을 건너뛰는 것을 막는다.
 -- !! 실행 전 필수: Netlify 환경변수에 SUPABASE_SERVICE_ROLE_KEY가 등록되어 있고,

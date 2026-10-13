@@ -48,15 +48,20 @@
 
     <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between">
-            <div class="flex items-center cursor-pointer" onclick="showPage('main')">
-                <img src="dcci_new_logo.png" alt="대구상공회의소 로고" class="h-8 sm:h-10 mr-2 sm:mr-3 flex-shrink-0">
-                <span class="text-xl sm:text-[22px] font-black text-[#0f3d7a] tracking-tighter whitespace-nowrap ml-1 sm:ml-2">교육센터</span>
+            <div class="flex items-center cursor-pointer min-w-0" onclick="showPage('main')">
+                <img src="dcci_new_logo.png" alt="대구상공회의소 로고" class="h-6 sm:h-10 mr-1.5 sm:mr-3 flex-shrink min-w-0 object-contain object-left">
+                <span class="text-base sm:text-[22px] font-black text-[#0f3d7a] tracking-tighter whitespace-nowrap sm:ml-2">교육센터</span>
             </div>
-            <div class="flex items-center gap-3 sm:gap-5">
+            <div class="flex items-center gap-2 sm:gap-5 flex-shrink-0 ml-2">
                 <button type="button" onclick="openLookupModal()"
-                    class="px-3 py-2 sm:px-4 text-xs sm:text-sm font-bold text-blue-900 border border-blue-900 rounded-lg hover:bg-blue-50 whitespace-nowrap">신청 확인</button>
-                <div class="text-xs sm:text-sm text-gray-500 font-medium text-right break-keep">
-                    <span class="hidden sm:inline">문의: 대구상공회의소 </span>교육담당자<br class="sm:hidden"> (053-222-3109)
+                    class="px-2.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-bold text-blue-900 border border-blue-900 rounded-lg hover:bg-blue-50 whitespace-nowrap">신청 확인</button>
+                <!-- 휴대폰: 누르면 바로 전화. PC: 문의 전화번호 글자 -->
+                <a href="tel:053-222-3109" aria-label="교육담당자에게 전화 (053-222-3109)"
+                    class="sm:hidden flex items-center justify-center w-8 h-8 rounded-full border border-gray-300 text-gray-600 hover:bg-gray-50">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.95.68l1.5 4.49a1 1 0 01-.5 1.21l-2.26 1.13a11.04 11.04 0 005.52 5.52l1.13-2.26a1 1 0 011.21-.5l4.49 1.5a1 1 0 01.68.95V19a2 2 0 01-2 2h-1C9.72 21 3 14.28 3 6V5z"></path></svg>
+                </a>
+                <div class="hidden sm:block text-sm text-gray-500 font-medium text-right whitespace-nowrap">
+                    문의: 대구상공회의소 교육담당자 (053-222-3109)
                 </div>
             </div>
         </div>

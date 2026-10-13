@@ -149,6 +149,7 @@ let lastRpcParams = null;
 let lastRpcClientKey = null;
 let lastLookupClientKey = null;
 let visitClientKeys = [];
+let atomicCourseApplyHook = null; // 시험용: 신청 함수 실패 상황 흉내
 function atomicCourseApply(p) {
   lastRpcParams = p;
   const existing = db.education_apply.find(a => a.req_id === p.p_req_id);
@@ -193,7 +194,7 @@ function createClient(url, key, opts = {}) {
   const client = { key, headers: (opts.global && opts.global.headers) || {} };
   client.from = table => makeQuery(client, table);
   client.rpc = async (name, params) => {
-    if (name === 'atomic_course_apply') { lastRpcClientKey = client.key; return atomicCourseApply(params); }
+    if (name === 'atomic_course_apply') { lastRpcClientKey = client.key; return atomicCourseApplyHook ? atomicCourseApplyHook(params) : atomicCourseApply(params); }
     if (name === 'replace_member_companies') {
       if (roleOf(client) !== 'admin') return raise('슈퍼관리자(OTP 인증)만 회원사 명단을 바꿀 수 있습니다.');
       const list = [...new Set(params.p_biz_nos.map(x => String(x).replace(/\D/g, '')).filter(x => /^\d{10}$/.test(x)))];
@@ -232,7 +233,8 @@ Module._load = function (request, parent, isMain) {
 function loadHandler(env) {
   for (const k of ['SUPABASE_URL', 'SUPABASE_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_SCRIPT_URL', 'APPS_SCRIPT_SECRET',
     'TURNSTILE_SECRET', 'TURNSTILE_DISABLED', 'TURNSTILE_HOSTNAMES',
-    'SOLAPI_API_KEY', 'SOLAPI_API_SECRET', 'SOLAPI_PFID', 'SOLAPI_TEMPLATE_ID', 'SOLAPI_SENDER']) delete process.env[k];
+    'SOLAPI_API_KEY', 'SOLAPI_API_SECRET', 'SOLAPI_PFID', 'SOLAPI_TEMPLATE_ID', 'SOLAPI_SENDER',
+    'SOLAPI_PAY_TEMPLATE_ID', 'PAYMENT_ACCOUNT']) delete process.env[k];
   // 운영과 같이 로봇 확인 키가 있는 상태가 기본. env에 undefined를 주면 그 값은 없는 상태로 테스트한다.
   const merged = { SUPABASE_URL: 'https://example.supabase.co', SUPABASE_KEY: 'anon', TURNSTILE_SECRET: 'ts-secret', ...env };
   for (const [k, v] of Object.entries(merged)) if (v !== undefined) process.env[k] = v;
@@ -971,4 +973,92 @@ test('fee: course fees are saved as numbers; invalid fee text is refused', async
   const pub = await call(handler, {});
   assert.strictEqual(pub.json[c.id].memberFee, 44000);
   assert.strictEqual(pub.json[c.id].nonmemberFee, 88000);
+});
+
+// ---- 교육비 입금 안내 알림톡 ----
+const PAY_ENV = { SUPABASE_SERVICE_ROLE_KEY: 'service', SOLAPI_API_KEY: 'k', SOLAPI_API_SECRET: 's', SOLAPI_PFID: 'pf',
+  SOLAPI_PAY_TEMPLATE_ID: 'TPL_PAY', PAYMENT_ACCOUNT: '대구은행 000-00-000000 대구상공회의소' };
+function payApps() {
+  const A = '44444444-4444-4444-8444-00000000000';
+  Object.assign(db.courses[0], { date: '2026. 11. 12(목) 09:30~12:30', member_fee: 44000, nonmember_fee: 88000 });
+  db.education_apply.push(
+    { id: A + '1', course_id: COURSE_ID, name: '회원', phone: '010-1111-2222', fee_type: 'member', applied_fee: 44000 },
+    { id: A + '2', course_id: COURSE_ID, name: '비회원', phone: '010-3333-4444', fee_type: 'nonmember', applied_fee: 88000 },
+    { id: A + '3', course_id: COURSE_ID, name: '미확인', phone: '010-5555-6666', fee_type: null, applied_fee: null },
+    { id: A + '4', course_id: COURSE_ID, name: '보냄', phone: '010-7777-8888', fee_type: 'member', applied_fee: 44000, pay_notice_sent_at: '2026-10-13T00:00:00Z' });
+  return [1, 2, 3, 4].map(i => A + i);
+}
+
+test('pay notice: sends fee, type, account and due date (day before class); skips unknown fee and already-sent', async () => {
+  const handler = loadHandler(PAY_ENV);
+  const ids = payApps();
+  const res = await adminPost(handler, { action: 'send_pay_notice', ids: ids.join(',') });
+  assert.strictEqual(res.statusCode, 200);
+  assert.deepStrictEqual([res.json.sent, res.json.failed, res.json.skipped.noFee, res.json.skipped.already], [2, 0, 1, 1]);
+  const msgs = solapiRequests.map(r => r.body.message);
+  assert.ok(msgs.every(m => m.kakaoOptions.templateId === 'TPL_PAY'));
+  const v = msgs.find(m => m.to === '01011112222').kakaoOptions.variables;
+  assert.deepStrictEqual(v, { '#{이름}': '회원', '#{과정명}': '세무회계 실무', '#{교육일시}': '2026. 11. 12(목) 09:30~12:30',
+    '#{교육비}': '44,000원', '#{구분}': '회원사', '#{입금계좌}': '대구은행 000-00-000000 대구상공회의소', '#{입금기한}': '2026. 11. 11(수)' });
+  assert.strictEqual(msgs.find(m => m.to === '01033334444').kakaoOptions.variables['#{교육비}'], '88,000원');
+  assert.ok(db.education_apply.find(a => a.id === ids[0]).pay_notice_sent_at);
+  assert.ok(!db.education_apply.find(a => a.id === ids[2]).pay_notice_sent_at);
+  const log = db.admin_access_log.find(l => l.action === 'send_pay_notice');
+  assert.ok(log && !JSON.stringify(log).includes('010'));
+  // 다시 보내기는 force=1일 때만
+  solapiRequests = [];
+  const again = await adminPost(handler, { action: 'send_pay_notice', ids: ids[0] });
+  assert.deepStrictEqual([again.json.sent, again.json.skipped.already], [0, 1]);
+  const forced = await adminPost(handler, { action: 'send_pay_notice', ids: ids[0], force: '1' });
+  assert.strictEqual(forced.json.sent, 1);
+});
+
+test('pay notice: super admin only, needs template and account, failures are reported and not marked', async () => {
+  let handler = loadHandler(PAY_ENV);
+  const ids = payApps();
+  for (const token of [STAFF_TOKEN, ADMIN_AAL1_TOKEN]) {
+    assert.strictEqual((await adminPost(handler, { action: 'send_pay_notice', ids: ids[0] }, token)).statusCode, 403);
+  }
+  assert.strictEqual(solapiRequests.length, 0);
+  assert.strictEqual((await adminPost(handler, { action: 'send_pay_notice', ids: 'x' })).statusCode, 400);
+  handler = loadHandler({ ...PAY_ENV, PAYMENT_ACCOUNT: undefined });
+  assert.strictEqual((await adminPost(handler, { action: 'send_pay_notice', ids: ids[0] })).statusCode, 503);
+  handler = loadHandler(PAY_ENV);
+  solapiMode = 'fail';
+  const res = await adminPost(handler, { action: 'send_pay_notice', ids: ids[1] });
+  assert.deepStrictEqual([res.json.sent, res.json.failed], [0, 1]);
+  assert.ok(!db.education_apply.find(a => a.id === ids[1]).pay_notice_sent_at);
+});
+
+// ---- 정밀점검(2026-10-13) 보강 ----
+test('logs: DB error details (which can hold the failing row) are never written to server logs', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const origRpc = createClient('u', 'service').rpc; // 참고용(가짜 클라이언트는 호출마다 새로 만듦)
+  const logs = [];
+  const origErr = console.error;
+  console.error = (...a) => logs.push(a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' '));
+  try {
+    db.courses[0].capacity = 0;
+    // 신청 함수가 제약 위반으로 실패한 상황: details에 신청자 행이 들어 있음
+    const orig = atomicCourseApplyHook;
+    atomicCourseApplyHook = () => ({ data: null, error: { code: '23514', message: 'new row violates check constraint', details: 'Failing row contains (홍길동, 010-1234-5678, hong@example.com)' } });
+    const res = await call(handler, { method: 'POST', body: applyForm() });
+    atomicCourseApplyHook = orig;
+    assert.strictEqual(res.statusCode, 500);
+    assert.ok(!JSON.stringify(res.json).includes('010-1234-5678'));
+  } finally { console.error = origErr; }
+  const all = logs.join('\n');
+  assert.ok(all.includes('23514'), all);
+  assert.ok(!all.includes('010-1234-5678') && !all.includes('hong@example.com'), all);
+  void origRpc;
+});
+
+test('public course list: cache key uses only the type parameter (Netlify-Vary)', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const res = await call(handler, { query: { type: 'public', bust: String(Math.random()) } });
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(res.headers['Netlify-Vary'], 'query=type');
+  assert.match(res.headers['Cache-Control'], /s-maxage=30/);
+  const admin = await call(handler, { type: 'admin', token: ADMIN_TOKEN });
+  assert.strictEqual(admin.headers['Cache-Control'], 'no-store');
 });
