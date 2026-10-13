@@ -838,31 +838,73 @@ function fetchMemberInfo() {
         .catch(err => { document.getElementById('member-count').textContent = '불러오기 실패'; console.error(err); });
 }
 
-// CSV에서 사업자등록번호만 뽑는다. '사업자'가 들어간 열이 있으면 그 열만, 없으면 각 줄의 첫 10자리 번호.
+// CSV 한 줄을 칸으로 나눈다(따옴표 안의 쉼표는 칸 구분이 아님. 예: "(주)가나, 대구지점")
+function csvCells(line) {
+    const out = []; let cur = ''; let q = false;
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (q) {
+            if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+            else if (ch === '"') q = false;
+            else cur += ch;
+        } else if (ch === '"') q = true;
+        else if (ch === ',') { out.push(cur.trim()); cur = ''; }
+        else cur += ch;
+    }
+    out.push(cur.trim());
+    return out;
+}
+
+// 회비 납부 여부 칸의 값: 납부·완납·Y·O는 납부, 미납·N·X·빈칸 등은 제외
+function isPaidValue(v) {
+    const t = String(v || '').replace(/\s/g, '');
+    if (!t || t.includes('미')) return false;
+    return t.includes('납부') || t === '완납' || /^(Y|O|○|예)$/i.test(t);
+}
+
+// CSV에서 회비 납부 회원사의 사업자등록번호만 뽑는다.
+// - '사업자'가 들어간 열이 있으면 그 열만 읽는다(없으면 각 줄의 첫 10자리 번호).
+// - '납부'가 들어간 열(예: 회비 납부 여부)이 있으면 그 칸이 '납부'인 행만 쓴다(미납 회사 제외).
 function extractBizNumbers(text) {
-    const lines = text.split(/\r?\n/).filter(l => l.trim());
-    const cells = line => line.split(',').map(c => c.replace(/^\s*"|"\s*$/g, '').trim());
-    const header = lines.length ? cells(lines[0]) : [];
+    const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim());
+    const header = lines.length ? csvCells(lines[0]) : [];
     const col = header.findIndex(h => h.includes('사업자'));
-    const out = [];
+    const paidCol = header.findIndex((h, i) => i !== col && h.includes('납부'));
     const rows = col >= 0 ? lines.slice(1) : lines;
+    const out = []; let unpaid = 0; const otherValues = new Set();
     rows.forEach(line => {
-        const target = col >= 0 ? (cells(line)[col] || '') : line;
+        const c = csvCells(line);
+        if (paidCol >= 0 && !isPaidValue(c[paidCol])) {
+            unpaid++;
+            const v = String(c[paidCol] || '').trim();
+            if (v && !v.includes('미')) otherValues.add(v);
+            return;
+        }
+        const target = col >= 0 ? (c[col] || '') : line;
         const m = target.match(/(?<![0-9])([0-9]{3})-?([0-9]{2})-?([0-9]{5})(?![0-9])/);
         if (m) out.push(m[1] + m[2] + m[3]);
     });
-    return { list: [...new Set(out)], usedColumn: col >= 0 ? header[col] : null, lines: rows.length };
+    return {
+        list: [...new Set(out)], usedColumn: col >= 0 ? header[col] : null, lines: rows.length,
+        paidColumn: paidCol >= 0 ? header[paidCol] : null, unpaid, otherValues: [...otherValues].slice(0, 5)
+    };
 }
 
 async function replaceMembers(btn) {
     const file = document.getElementById('member-file').files[0];
     if (!file) return alert('CSV 파일을 선택해주세요.');
-    const text = await file.text();
-    const { list, usedColumn, lines } = extractBizNumbers(text);
-    if (list.length === 0) return alert('파일에서 사업자등록번호(10자리)를 찾지 못했습니다. 엑셀에서 CSV로 저장했는지 확인해주세요.');
+    // 엑셀의 'CSV(쉼표로 분리)'는 한글이 EUC-KR로 저장된다. UTF-8로 읽어 깨지면 EUC-KR로 다시 읽는다.
+    const buf = await file.arrayBuffer();
+    let text = new TextDecoder('utf-8').decode(buf);
+    if (text.includes('\uFFFD')) text = new TextDecoder('euc-kr').decode(buf);
+    const { list, usedColumn, lines, paidColumn, unpaid, otherValues } = extractBizNumbers(text);
+    if (list.length === 0) return alert('파일에서 회비 납부 회원사의 사업자등록번호(10자리)를 찾지 못했습니다. 엑셀에서 CSV로 저장했는지, 납부 여부 칸이 "납부"로 적혀 있는지 확인해주세요.');
     const masked = list.slice(0, 3).map(b => `***-**-*${b.slice(-4)}`).join(', ');
     const how = usedColumn ? `'${usedColumn}' 열에서` : '각 줄에서';
-    if (!confirm(`${how} 사업자등록번호 ${list.length}개를 찾았습니다(전체 ${lines}줄).\n예: ${masked}\n\n기존 명단을 지우고 이 명단으로 바꾸시겠습니까?`)) return;
+    const paidNote = paidColumn
+        ? `'${paidColumn}' 열이 '납부'인 회사만 골랐습니다(전체 ${lines}줄 중 ${unpaid}줄 제외).` + (otherValues.length ? `\n※ 납부로 보지 않은 값: ${otherValues.join(', ')}` : '')
+        : '⚠️ 회비 납부 여부 열이 없습니다. 파일의 모든 회사가 회원사 교육비로 등록됩니다.\n납부한 회사만 들어 있는 명단이 맞는지 확인하세요.';
+    if (!confirm(`${how} 회원사 교육비 대상 ${list.length}개를 찾았습니다.\n${paidNote}\n예: ${masked}\n\n기존 명단을 지우고 이 명단으로 바꾸시겠습니까?`)) return;
     btn.disabled = true;
     try {
         const result = await memberPost({ action: 'member_replace', bizNos: list.join(',') });
