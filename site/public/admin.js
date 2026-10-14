@@ -87,6 +87,8 @@ async function initSupabase() {
         // Check current session
         const { data: { session } } = await supabaseClient.auth.getSession();
         applySession(session);
+        // 새로고침·브라우저 탭 복원 때도 그 전에 비어 있던 시간을 이어서 센다(아래 '자리 비움 자동 로그아웃').
+        checkIdle();
 
     } catch (err) {
         console.error("Initialization Error:", err);
@@ -228,6 +230,8 @@ async function verifyMfa() {
         if (document.getElementById('mfa-remember').checked) rememberThisPc();
         const { data: { session } } = await supabaseClient.auth.getSession();
         applySession(session);
+        // 새로고침·브라우저 탭 복원 때도 그 전에 비어 있던 시간을 이어서 센다(아래 '자리 비움 자동 로그아웃').
+        checkIdle();
     } catch (err) {
         alert('코드가 맞지 않습니다. 인증 앱의 현재 코드를 다시 입력해주세요.');
         codeInput.value = '';
@@ -1040,18 +1044,35 @@ document.getElementById('mfa-panel').addEventListener('submit', e => { e.prevent
 // --- 자리 비움 자동 로그아웃 ---
 // 관리자 화면을 열어 둔 채 조작이 없으면 로그아웃한다(서버에 저장된 재발급 토큰도 폐기).
 // 기본 30분, "이 PC 기억"을 켠 PC는 4시간. 탭을 닫아 두는 시간은 세지 않는다.
-// 참고: 이미 발급된 접속 토큰(JWT)은 만료 시각(Supabase 기본 1시간)까지 서버에서 유효할 수 있다.
+// 마지막 조작 시각은 이 탭(sessionStorage)에 적어 두어, 새로고침하거나 브라우저가 탭을 복원해도 이어서 센다.
+// 참고: 이미 발급된 접속 토큰(JWT)은 만료 시각(Supabase 설정 30분)까지 서버에서 유효할 수 있다.
 const IDLE_LIMIT_MS = 30 * 60 * 1000;
 const IDLE_LIMIT_TRUSTED_MS = 4 * 60 * 60 * 1000;
-let lastActivity = Date.now();
+const ACTIVITY_KEY = 'dcciedu-admin-last-activity';
+function loadActivity() {
+    try {
+        const t = Number(sessionStorage.getItem(ACTIVITY_KEY));
+        if (t > 0 && t <= Date.now()) return t;
+    } catch (e) { /* 저장소를 못 쓰는 브라우저는 지금부터 센다 */ }
+    return Date.now();
+}
+let lastActivity = loadActivity();
+let lastSaved = 0;
+function touchActivity() {
+    lastActivity = Date.now();
+    if (lastActivity - lastSaved < 10 * 1000) return; // 저장은 10초에 한 번만
+    lastSaved = lastActivity;
+    try { sessionStorage.setItem(ACTIVITY_KEY, String(lastActivity)); } catch (e) { /* 무시 */ }
+}
 ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'].forEach(ev =>
-    document.addEventListener(ev, () => { lastActivity = Date.now(); }, { passive: true }));
+    document.addEventListener(ev, touchActivity, { passive: true }));
 function checkIdle() {
     const loggedIn = sessionToken || !document.getElementById('mfa-panel').classList.contains('hidden');
     const limit = isTrustedPc() ? IDLE_LIMIT_TRUSTED_MS : IDLE_LIMIT_MS;
     if (!loggedIn || Date.now() - lastActivity < limit) return;
-    lastActivity = Date.now();
     const label = isTrustedPc() ? '4시간' : '30분';
+    lastSaved = 0;
+    touchActivity();
     logout().finally(() => alert(`${label} 동안 사용하지 않아 자동으로 로그아웃되었습니다.`));
 }
 setInterval(checkIdle, 60 * 1000);
