@@ -80,8 +80,14 @@ async function initSupabase() {
 
         // Listen to auth state changes
         // 콜백 안에서 Supabase 함수를 바로 부르면 멈출 수 있어 다음 차례로 미룬다.
+        // 같은 브라우저의 다른 관리자 탭에서 로그아웃하면(자리 비움 자동 로그아웃 포함) 이 탭에도 SIGNED_OUT이 전달된다.
         supabaseClient.auth.onAuthStateChange((event, session) => {
-            setTimeout(() => applySession(session), 0);
+            const byOtherTab = event === 'SIGNED_OUT' && !loggingOut &&
+                (sessionToken || !document.getElementById('mfa-panel').classList.contains('hidden'));
+            setTimeout(() => {
+                applySession(session);
+                if (byOtherTab) alert('다른 창(탭)에서 로그아웃되어 이 창도 로그아웃되었습니다. 다시 로그인해주세요.');
+            }, 0);
         });
 
         // Check current session
@@ -168,6 +174,7 @@ function isSuperAdmin() {
 window.onload = initSupabase;
 
 function hideMfa() {
+    mfaSeq++; // 준비 중이던 OTP 화면(showMfa)이 있으면 결과를 화면에 쓰지 않게 한다
     document.getElementById('mfa-remember').checked = false;
     mfaFactorId = null;
     document.getElementById('mfa-panel').classList.add('hidden');
@@ -181,13 +188,16 @@ function hideMfa() {
 
 // OTP 단계: 등록된 인증 앱이 있으면 코드 입력, 없으면 QR 등록부터
 let mfaLoading = false; // 같은 화면을 두 번 준비하지 않도록 (중복 등록 방지)
+let mfaSeq = 0; // hideMfa가 부를 때마다 1 늘어난다. 준비 도중 로그아웃되면 값이 달라져 중단한다.
 async function showMfa() {
     if (mfaLoading || (!document.getElementById('mfa-panel').classList.contains('hidden') && mfaFactorId)) return;
     mfaLoading = true;
+    const seq = mfaSeq;
     document.getElementById('login-form').classList.add('hidden');
     document.getElementById('mfa-panel').classList.remove('hidden');
     try {
         const { data, error } = await supabaseClient.auth.mfa.listFactors();
+        if (seq !== mfaSeq) return; // 기다리는 사이 로그아웃됨(다른 탭 등): 로그인 화면을 그대로 둔다
         if (error) throw error;
         const verified = data.totp || [];
         if (verified.length > 0) {
@@ -202,6 +212,7 @@ async function showMfa() {
                 }
             }
             const { data: enrolled, error: enrollError } = await supabaseClient.auth.mfa.enroll({ factorType: 'totp', friendlyName: '관리자 OTP' });
+            if (seq !== mfaSeq) return; // 끝내지 못한 등록은 다음 로그인 때 위에서 지운다
             if (enrollError) throw enrollError;
             mfaFactorId = enrolled.id;
             document.getElementById('mfa-qr').src = enrolled.totp.qr_code;
@@ -211,6 +222,7 @@ async function showMfa() {
         }
         document.getElementById('mfa-code').focus();
     } catch (err) {
+        if (seq !== mfaSeq) return;
         alert('2단계 인증을 준비하지 못했습니다: ' + err.message);
         logout();
     } finally {
@@ -230,8 +242,6 @@ async function verifyMfa() {
         if (document.getElementById('mfa-remember').checked) rememberThisPc();
         const { data: { session } } = await supabaseClient.auth.getSession();
         applySession(session);
-        // 새로고침·브라우저 탭 복원 때도 그 전에 비어 있던 시간을 이어서 센다(아래 '자리 비움 자동 로그아웃').
-        checkIdle();
     } catch (err) {
         alert('코드가 맞지 않습니다. 인증 앱의 현재 코드를 다시 입력해주세요.');
         codeInput.value = '';
@@ -276,9 +286,15 @@ async function tryLogin() {
 
 // Logout Handler
 // 로그아웃하면 "이 PC 기억"도 함께 지운다(다음 로그인 때 OTP를 다시 묻는다).
+let loggingOut = false; // 이 탭에서 직접 로그아웃하는 중(다른 탭 로그아웃 안내를 띄우지 않음)
 async function logout() {
-    if (supabaseClient) {
-        await supabaseClient.auth.signOut();
+    loggingOut = true;
+    try {
+        if (supabaseClient) {
+            await supabaseClient.auth.signOut();
+        }
+    } finally {
+        loggingOut = false;
     }
     forgetThisPc();
 }
