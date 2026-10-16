@@ -574,6 +574,7 @@ exports.handler = async function(event, context) {
             feeType: app.fee_type || "",
             appliedFee: app.applied_fee ?? "",
             payNoticeAt: app.pay_notice_sent_at ? formatTimestamp(app.pay_notice_sent_at) : "",
+            paidAt: app.paid_at ? formatTimestamp(app.paid_at) : "",
             memberType: "",
             feeStatus: "",
             councilType: ""
@@ -664,6 +665,19 @@ exports.handler = async function(event, context) {
         if (!data || data.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 신청을 찾을 수 없습니다.' });
         await logAccess(adminUser, adminRole, 'set_fee_type', `신청 ${id}, ${feeType}`);
         return jsonRes(200, { result: 'success', feeType, appliedFee });
+      }
+
+      // 교육비 입금 확인 표시(슈퍼관리자만). paid=1이면 지금 시각을 남기고, 0이면 지운다(sql/18).
+      if (action === 'set_paid') {
+        const id = str(reqBody.id);
+        const paid = str(reqBody.paid);
+        if (!UUID_RE.test(id) || !['0', '1'].includes(paid)) return jsonRes(400, { result: 'error', msg: '잘못된 요청입니다.' });
+        const paidAt = paid === '1' ? new Date().toISOString() : null;
+        const { data, error } = await dbClient.from('education_apply').update({ paid_at: paidAt }).eq('id', id).select('id');
+        if (error) throw error;
+        if (!data || data.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 신청을 찾을 수 없습니다.' });
+        await logAccess(adminUser, adminRole, 'set_paid', `신청 ${id}, ${paid === '1' ? '입금확인' : '확인취소'}`);
+        return jsonRes(200, { result: 'success', paidAt: paidAt ? formatTimestamp(paidAt) : '' });
       }
 
       // 교육비 입금 안내 알림톡 보내기(슈퍼관리자만, 한 번에 최대 50건). 이미 보낸 신청은 force=1일 때만 다시 보낸다.
