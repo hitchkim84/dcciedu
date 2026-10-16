@@ -37,6 +37,7 @@
 - SOLAPI_SENDER: (선택) 솔라피에 등록한 발신번호. 있으면 알림톡 실패 시 문자로 대신 보낸다(문자 요금 별도)
 - SOLAPI_PAY_TEMPLATE_ID: (선택) 승인된 '교육비 입금안내' 알림톡 템플릿 ID(`KA01TP…`). 변수 `#{이름}` `#{과정명}` `#{교육일시}` `#{교육비}` `#{구분}` `#{입금계좌}` `#{입금기한}`
 - PAYMENT_ACCOUNT: (선택) 입금계좌 문구(예: 은행명 계좌번호 예금주). 비밀값은 아니지만 공개 저장소에 올리지 않도록 환경변수로 둔다. 둘 다 있어야 관리자 '입금안내' 버튼이 동작(입금기한은 교육일 전날 자동, 발송 시각은 `sql/17` `pay_notice_sent_at`)
+- 메인 배너 슬라이드: `public/index.html`의 `#banner` 안 `data-slide` 블록(동작은 `public/banner.js`, 5초 자동 넘김). 기간이 있는 배너는 `data-until="YYYY-MM-DD"`를 붙이면 그날이 지나면 자동으로 사라진다. 외부 사이트 배너는 새 창(`rel="noopener noreferrer"`)으로 열고 '외부 사이트'를 표시한다. 현재: 대한상의 비즈캠퍼스 법정의무교육(공문 한상공공 제1195호, ~2026-12-31).
 - 입금 확인: 관리자 명단 '입금확인' 칸에서 슈퍼관리자가 입금을 확인하면 체크한다(체크 시각 저장, `sql/18` `paid_at`). 엑셀(CSV)에도 '입금완료 시각'으로 나온다.
 
 ## 5. 테스트 배포와 운영 배포 분리 (GitHub & Netlify 연동)
@@ -67,7 +68,7 @@
 ## 6-3. 디자인 CSS 재생성 (Tailwind)
 외부 CDN을 쓰지 않고 `public/tailwind.css`를 미리 만들어 둡니다. HTML에 **새 Tailwind 클래스를 추가했을 때만** `site` 폴더에서 아래를 실행하고 결과 파일을 함께 커밋하세요.
 ```
-npx tailwindcss@3.4.19 --content "public/*.html,public/admin.js" -o public/tailwind.css --minify
+npx tailwindcss@3.4.19 --content "public/*.html,public/admin.js,public/banner.js" -o public/tailwind.css --minify
 ```
 JS에서 클래스 이름을 문자열로 이어 붙여 만들면(예: 'bg-' + 색) 생성되지 않으니, 클래스 이름은 항상 전체를 그대로 적습니다.
 

@@ -71,9 +71,28 @@
 
         <div id="page-main">
 
-            <div class="w-full relative mb-12 rounded-xl overflow-hidden group cursor-pointer">
-                <img src="main.png" alt="대구상공회의소 교육센터 메인"
-                    class="w-full h-auto object-contain transition-transform duration-500 group-hover:scale-105">
+            <!-- 메인 배너 슬라이드 (동작: banner.js). 배너를 더하려면 data-slide 블록을 복사하고,
+                 기간이 있는 배너는 data-until="YYYY-MM-DD"(그날까지 표시)를 붙인다. 외부 사이트는 새 창으로 연다. -->
+            <div id="banner" class="w-full relative mb-12 rounded-xl overflow-hidden group" aria-roledescription="carousel" aria-label="메인 배너">
+                <div class="relative w-full aspect-[1024/356] bg-blue-50">
+                    <div data-slide class="absolute inset-0 transition-opacity duration-700 opacity-100">
+                        <img src="main.png" alt="대구상공회의소 교육센터 메인"
+                            class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
+                    </div>
+                    <!-- 대한상공회의소 비즈캠퍼스 법정의무교육(대한상의 공문 한상공공 제1195호, 2026.09.22 홍보 요청, 이용기간 ~2026.12.31) -->
+                    <a data-slide data-until="2026-12-31" href="https://bizcampus.korcham.net/" target="_blank" rel="noopener noreferrer"
+                        title="대한상공회의소 비즈캠퍼스(외부 사이트)로 새 창에서 이동합니다"
+                        class="absolute inset-0 transition-opacity duration-700 opacity-0 pointer-events-none">
+                        <img src="banner_bizcampus.png" alt="법정의무교육, 상공회의소 회원사라면 무료 - 대한상공회의소 비즈캠퍼스(외부 사이트, 새 창)" loading="lazy"
+                            class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
+                        <span class="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 text-[10px] sm:text-xs bg-black/40 text-white px-1.5 sm:px-2 py-0.5 rounded"><span class="hidden sm:inline">대한상공회의소 비즈캠퍼스 · </span>외부 사이트 ↗</span>
+                    </a>
+                </div>
+                <button type="button" data-banner="prev" aria-label="이전 배너"
+                    class="absolute left-1 sm:left-3 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center text-white/70 hover:text-white text-3xl sm:text-4xl leading-none select-none">&#8249;</button>
+                <button type="button" data-banner="next" aria-label="다음 배너"
+                    class="absolute right-1 sm:right-3 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center text-white/70 hover:text-white text-3xl sm:text-4xl leading-none select-none">&#8250;</button>
+                <div data-banner="dots" class="absolute bottom-2 sm:bottom-3 left-1/2 -translate-x-1/2 flex gap-2"></div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 mb-12 sm:mb-16 items-stretch">
@@ -546,6 +565,7 @@
         </div>
     </div>
 
+    <script src="banner.js" defer></script>
     <script>
         /**
          * [설정] Netlify Functions 프록시 URL (netlify.toml에서 /api/* → 함수로 연결)
