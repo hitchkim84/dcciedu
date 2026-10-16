@@ -496,7 +496,7 @@ function escapeHtml(value) {
 }
 
 const APPLICANT_COLUMNS = [
-    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['payNoticeAt', '입금안내'], ['dept', '부서'],
+    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['payNoticeAt', '입금안내'], ['paidText', '입금확인'], ['dept', '부서'],
     ['position', '직위'], ['name', '성명'], ['phone', '연락처'], ['email', '이메일'], ['privacy', '개인정보동의']
 ];
 
@@ -506,7 +506,8 @@ function sortedApplicants(item) {
     return (item.applicants || []).map(a => ({
         ...a,
         feeLabel: FEE_LABELS[a.feeType] || '미확인',
-        feeText: a.appliedFee === '' || a.appliedFee === null || a.appliedFee === undefined ? '' : Number(a.appliedFee).toLocaleString('ko-KR') + '원'
+        feeText: a.appliedFee === '' || a.appliedFee === null || a.appliedFee === undefined ? '' : Number(a.appliedFee).toLocaleString('ko-KR') + '원',
+        paidText: a.paidAt ? '입금완료 ' + a.paidAt : ''
     })).sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
 }
 
@@ -573,6 +574,38 @@ function setFeeType(btn) {
         .catch(err => { alert('오류 발생: ' + err); btn.disabled = false; });
 }
 
+// 교육비 입금 확인 체크/해제(슈퍼관리자). 체크한 시각이 남는다(sql/18).
+function setPaid(box) {
+    const paid = box.checked;
+    const who = `${box.dataset.name}(${box.dataset.company})`;
+    if (!confirm(paid ? `${who}의 교육비 입금을 확인 처리하시겠습니까?` : `${who}의 입금 확인을 취소하시겠습니까?`)) {
+        box.checked = !paid;
+        return;
+    }
+    box.disabled = true;
+    fetch(scriptURL + '?type=admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + sessionToken },
+        body: new URLSearchParams({ action: 'set_paid', id: box.dataset.id, paid: paid ? '1' : '0' })
+    })
+        .then(r => r.json())
+        .then(result => {
+            if (result.result !== 'success') throw new Error(result.msg);
+            fetchStatus();
+        })
+        .catch(err => { alert('⛔ 입금 확인 저장 실패: ' + err.message); box.checked = !paid; box.disabled = false; });
+}
+
+// 명단 칸 하나. 슈퍼관리자에게는 '입금확인' 칸이 체크박스로 보인다.
+function applicantCell(app, key, canEdit) {
+    if (key === 'paidText' && canEdit) {
+        return `<label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" data-action="set-paid"
+            data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"${app.paidAt ? ' checked' : ''}
+            aria-label="입금확인"><span class="${app.paidAt ? 'text-green-700 font-bold' : 'text-gray-400'}">${app.paidAt ? '완료' : '미입금'}</span>${app.paidAt ? `<span class="text-xs text-gray-500">${escapeHtml(app.paidAt)}</span>` : ''}</label>`;
+    }
+    return escapeHtml(app[key]);
+}
+
 function renderApplicantsTable(item, idx) {
     const apps = sortedApplicants(item);
     if (apps.length === 0) {
@@ -589,7 +622,7 @@ function renderApplicantsTable(item, idx) {
         <tr class="border-t">
             ${canDelete ? `<td class="px-3 py-2"><input type="checkbox" class="app-check" data-course="${idx}" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}" data-fee="${escapeHtml(app.feeText)}" data-label="${escapeHtml(app.feeLabel)}" data-sent="${escapeHtml(app.payNoticeAt)}" aria-label="선택"></td>` : ''}
             <td class="px-3 py-2 text-xs text-gray-500">${i + 1}</td>
-            ${APPLICANT_COLUMNS.map(([key]) => `<td class="px-3 py-2 text-sm text-gray-800">${escapeHtml(app[key])}</td>`).join('')}
+            ${APPLICANT_COLUMNS.map(([key]) => `<td class="px-3 py-2 text-sm text-gray-800">${applicantCell(app, key, canDelete)}</td>`).join('')}
             ${canDelete ? `<td class="px-3 py-2"><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
                 data-fee="${escapeHtml(app.feeText)}" data-label="${escapeHtml(app.feeLabel)}" data-sent="${escapeHtml(app.payNoticeAt)}" data-action="send-pay-notice"
                 class="px-2 py-1 mr-1 text-xs font-bold text-green-700 border border-green-300 rounded hover:bg-green-50">입금안내</button><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
@@ -599,7 +632,7 @@ function renderApplicantsTable(item, idx) {
         </tr>`).join('');
     return `
         <div class="flex justify-between items-center mb-2">
-            <span class="text-sm font-bold text-gray-700">신청자 명단 (${apps.length}명)</span>
+            <span class="text-sm font-bold text-gray-700">신청자 명단 (${apps.length}명 · 입금확인 ${apps.filter(a => a.paidAt).length}명)</span>
             <div>
                 ${canDelete ? `<button type="button" data-action="send-pay-selected" data-idx="${idx}"
                     class="px-3 py-1 mr-2 text-xs font-bold text-green-700 border border-green-300 rounded hover:bg-green-50">선택 입금안내</button>` : ''}
@@ -1043,6 +1076,7 @@ const ACTIONS = {
     'edit-course': el => loadCourseForEdit(el.dataset.id),
     'delete-course': el => deleteCourse(el.dataset.id),
     'set-fee-type': el => setFeeType(el),
+    'set-paid': el => setPaid(el),
     'send-pay-notice': el => sendPayNotice([payItem(el)], el),
     'send-pay-selected': el => sendPayNotice([...document.querySelectorAll(`.app-check[data-course="${el.dataset.idx}"]:checked`)].map(payItem), el),
     'member-replace': el => replaceMembers(el),

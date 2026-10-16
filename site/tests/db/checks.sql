@@ -206,5 +206,14 @@ BEGIN
   IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 구분 변경: %', r; END IF;
   r := pg_temp.as_role('authenticated', aal2, $q$WITH x AS (UPDATE public.education_apply SET fee_type = 'member', applied_fee = 44000 WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
   IF r <> 'rows=1' THEN RAISE EXCEPTION '슈퍼관리자 구분 변경: %', r; END IF;
+  -- 입금 확인 표시(sql/18): 슈퍼관리자 aal2만, aal1·일반관리자는 불가
+  r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.education_apply SET paid_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
+  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 입금 확인: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal1, $q$WITH x AS (UPDATE public.education_apply SET paid_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
+  IF r <> 'rows=0' THEN RAISE EXCEPTION '슈퍼관리자 aal1 입금 확인: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal2, $q$WITH x AS (UPDATE public.education_apply SET paid_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
+  IF r <> 'rows=1' THEN RAISE EXCEPTION '슈퍼관리자 입금 확인: %', r; END IF;
+  IF (SELECT paid_at FROM public.education_apply WHERE req_id = 'fee-2') IS NULL THEN RAISE EXCEPTION '입금 확인 시각 저장 안 됨'; END IF;
+  RAISE NOTICE '입금 확인: 슈퍼관리자(OTP)만 표시 가능, 일반관리자·OTP 전 슈퍼관리자는 0건';
   RAISE NOTICE '교육비 판별: 사업자번호 없으면 거절, 명단에 있으면 회원사 44,000원·없으면 비회원사 88,000원, 구분 변경은 슈퍼관리자만';
 END $$;
