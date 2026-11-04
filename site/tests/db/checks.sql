@@ -80,6 +80,31 @@ BEGIN
   IF (SELECT visits FROM public.daily_visits WHERE day = (now() AT TIME ZONE 'Asia/Seoul')::date) <> 2 THEN RAISE EXCEPTION '접속횟수 누적 오류'; END IF;
   RAISE NOTICE '접속 횟수: 홈페이지·관리자 키로 읽기·조작·실행 불가, 서버 키만 날짜별 숫자를 올림(2회 → 2)';
 
+  -- 유입 경로(sql/19): 홈페이지·관리자 키로 읽기·쓰기·실행 불가, 서버 키만. 잘못된 이름은 etc, 하루 50개 넘으면 etc. 날짜별 합계도 함께 오름
+  r := pg_temp.as_role('anon', '{}', 'SELECT count(*) FROM public.daily_visit_sources');
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '비로그인 유입경로 조회: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal2, 'SELECT count(*) FROM public.daily_visit_sources');
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '관리자 유입경로 조회: %', r; END IF;
+  r := pg_temp.as_role('anon', '{}', $q$SELECT count(*) FROM (SELECT public.count_visit_from('news')) x$q$);
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '비로그인 유입경로 함수: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal2, $q$SELECT count(*) FROM (SELECT public.count_visit_from('news')) x$q$);
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '관리자 유입경로 함수: %', r; END IF;
+  r := pg_temp.as_role('service_role', '{}', $q$SELECT count(*) FROM (SELECT public.count_visit_from('news')) x$q$);
+  r := pg_temp.as_role('service_role', '{}', $q$SELECT count(*) FROM (SELECT public.count_visit_from('NEWS')) x$q$);
+  r := pg_temp.as_role('service_role', '{}', $q$SELECT count(*) FROM (SELECT public.count_visit_from('<script>')) x$q$);
+  IF (SELECT visits FROM public.daily_visit_sources WHERE day = (now() AT TIME ZONE 'Asia/Seoul')::date AND source = 'news') <> 2
+     OR (SELECT visits FROM public.daily_visit_sources WHERE day = (now() AT TIME ZONE 'Asia/Seoul')::date AND source = 'etc') <> 1
+     OR (SELECT visits FROM public.daily_visits WHERE day = (now() AT TIME ZONE 'Asia/Seoul')::date) <> 5 THEN
+    RAISE EXCEPTION '유입경로 누적 오류';
+  END IF;
+  FOR i IN 1..60 LOOP
+    PERFORM pg_temp.as_role('service_role', '{}', format('SELECT count(*) FROM (SELECT public.count_visit_from(%L)) x', 'tag' || i));
+  END LOOP;
+  IF (SELECT count(*) FROM public.daily_visit_sources WHERE day = (now() AT TIME ZONE 'Asia/Seoul')::date) <> 50 THEN
+    RAISE EXCEPTION '유입경로 하루 50개 제한: %', (SELECT count(*) FROM public.daily_visit_sources WHERE day = (now() AT TIME ZONE 'Asia/Seoul')::date);
+  END IF;
+  RAISE NOTICE '유입 경로: 홈페이지·관리자 키로 읽기·실행 불가, 서버 키만 기록, 대문자는 소문자로·잘못된 이름은 etc, 하루 50개 넘으면 etc, 날짜별 합계도 함께 오름';
+
   -- 신청 직접 등록·삭제·수정
   r := pg_temp.as_role('authenticated', aal2, $q$WITH x AS (INSERT INTO public.education_apply (req_id, course_id, name) VALUES ('direct', '55555555-5555-5555-5555-555555555555', 'x') RETURNING 1) SELECT count(*) FROM x$q$);
   IF r <> 'error=42501' THEN RAISE EXCEPTION '관리자 aal2 신청 직접 등록: %', r; END IF;
