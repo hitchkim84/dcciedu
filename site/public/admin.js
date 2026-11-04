@@ -496,7 +496,7 @@ function escapeHtml(value) {
 }
 
 const APPLICANT_COLUMNS = [
-    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['payNoticeAt', '입금안내'], ['paidText', '입금확인'], ['dept', '부서'],
+    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['payNoticeAt', '입금안내'], ['paidText', '입금확인'], ['cancelNoticeAt', '폐강안내'], ['dept', '부서'],
     ['position', '직위'], ['name', '성명'], ['phone', '연락처'], ['email', '이메일'], ['privacy', '개인정보동의']
 ];
 
@@ -549,6 +549,43 @@ function sendPayNotice(items, btn) {
             fetchStatus();
         })
         .catch(err => alert('⛔ 입금 안내 실패: ' + err.message))
+        .finally(() => { btn.disabled = false; });
+}
+
+// 교육 폐강 안내 알림톡(슈퍼관리자, sql/20). 한 과정의 신청자 전원에게 보낸다.
+function sendCancelNotice(btn) {
+    const item = statusCourses[Number(btn.dataset.idx)];
+    if (!item) return;
+    const apps = item.applicants || [];
+    if (apps.length === 0) return alert('이 과정에는 신청자가 없습니다.');
+    const sentBefore = apps.filter(a => a.cancelNoticeAt).length;
+    if (!confirm(`'${item.title}' 과정의 신청자 ${apps.length}명에게 폐강 안내 알림톡을 보내시겠습니까?\n\n보낸 뒤에는 되돌릴 수 없습니다.\n홈페이지 신청 마감은 '교육 과정 관리'에서 신청 마감일을 지난 날짜로 바꿔 따로 해주세요.`)) return;
+    let force = '0';
+    if (sentBefore) {
+        if (sentBefore === apps.length) {
+            if (!confirm(`이미 ${sentBefore}명 모두에게 폐강 안내를 보냈습니다. 다시 보내시겠습니까?`)) return;
+            force = '1';
+        } else if (confirm(`이 중 ${sentBefore}명은 이미 폐강 안내를 받았습니다. 그분들께도 다시 보내시겠습니까?\n(취소를 누르면 아직 받지 않은 ${apps.length - sentBefore}명에게만 보냅니다)`)) force = '1';
+    }
+    btn.disabled = true;
+    fetch(scriptURL + '?type=admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + sessionToken },
+        body: new URLSearchParams({ action: 'send_cancel_notice', course_id: item.id, force })
+    })
+        .then(r => r.json())
+        .then(result => {
+            if (result.result !== 'success') throw new Error(result.msg);
+            const sk = result.skipped || {};
+            const notes = [
+                result.failed ? `실패 ${result.failed}건 (잠시 후 다시 보내주세요)` : '',
+                sk.already ? `이미 보낸 ${sk.already}건 제외` : '',
+                sk.badPhone ? `휴대폰 번호 오류 ${sk.badPhone}건 제외` : ''
+            ].filter(Boolean).join('\n');
+            alert(`📨 폐강 안내 ${result.sent}건을 보냈습니다.${notes ? '\n' + notes : ''}`);
+            fetchStatus();
+        })
+        .catch(err => alert('⛔ 폐강 안내 실패: ' + err.message))
         .finally(() => { btn.disabled = false; });
 }
 
@@ -636,6 +673,8 @@ function renderApplicantsTable(item, idx) {
             <div>
                 ${canDelete ? `<button type="button" data-action="send-pay-selected" data-idx="${idx}"
                     class="px-3 py-1 mr-2 text-xs font-bold text-green-700 border border-green-300 rounded hover:bg-green-50">선택 입금안내</button>` : ''}
+                ${canDelete ? `<button type="button" data-action="send-cancel-notice" data-idx="${idx}"
+                    class="px-3 py-1 mr-2 text-xs font-bold text-gray-700 border border-gray-400 rounded hover:bg-gray-100">폐강안내 (전원)</button>` : ''}
                 ${canDelete ? `<button type="button" data-action="delete-selected" data-idx="${idx}"
                     class="px-3 py-1 mr-2 text-xs font-bold text-red-600 border border-red-300 rounded hover:bg-red-50">선택 삭제</button>` : ''}
                 <button type="button" data-action="download-csv" data-idx="${idx}"
@@ -1077,6 +1116,7 @@ const ACTIONS = {
     'delete-course': el => deleteCourse(el.dataset.id),
     'set-fee-type': el => setFeeType(el),
     'set-paid': el => setPaid(el),
+    'send-cancel-notice': el => sendCancelNotice(el),
     'send-pay-notice': el => sendPayNotice([payItem(el)], el),
     'send-pay-selected': el => sendPayNotice([...document.querySelectorAll(`.app-check[data-course="${el.dataset.idx}"]:checked`)].map(payItem), el),
     'member-replace': el => replaceMembers(el),
