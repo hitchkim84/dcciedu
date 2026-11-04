@@ -194,34 +194,70 @@
                 <p class="sm:hidden text-xs text-gray-400 mt-2 text-center">↔ 좌우로 밀어서 일정을 확인하세요</p>
             </div>
 
-            <!-- 관련 사이트 배너: 대구상공회의소 공식 홈페이지·블로그 (새 창으로 이동) -->
+            <!-- 카카오톡 채널 친구 추가 띠 (새 창). 주소 = 카카오톡 채널 관리자센터 '채널 URL'(http://pf.kakao.com/_Flxexbb) + /friend -->
+            <a href="https://pf.kakao.com/_Flxexbb/friend" target="_blank" rel="noopener noreferrer"
+                class="group mt-8 sm:mt-10 flex items-center gap-3 sm:gap-5 rounded-xl bg-[#FEE500] px-4 py-4 sm:px-6 sm:py-5 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
+                <div class="flex-shrink-0 w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-[#3C1E1E] flex items-center justify-center">
+                    <svg class="w-6 h-6 sm:w-7 sm:h-7 text-[#FEE500]" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C6.48 3 2 6.58 2 11c0 2.85 1.86 5.35 4.66 6.77l-.95 3.48c-.08.31.27.56.54.38l4.13-2.74c.53.07 1.07.11 1.62.11 5.52 0 10-3.58 10-8S17.52 3 12 3z"></path></svg>
+                </div>
+                <div class="flex-grow min-w-0">
+                    <p class="text-sm sm:text-lg font-extrabold text-[#3C1E1E] tracking-tight break-keep">카카오톡 채널 '대구상공회의소' 친구 추가</p>
+                    <p class="text-xs sm:text-sm text-[#3C1E1E]/80 mt-0.5 break-keep">새 교육 과정과 상의 소식을 카톡으로 받아보세요</p>
+                </div>
+                <span class="flex-shrink-0 inline-flex items-center gap-1 rounded-full bg-[#3C1E1E] text-[#FEE500] text-xs sm:text-sm font-bold px-3 py-2 sm:px-4 group-hover:bg-black transition-colors">친구 추가<span class="hidden sm:inline"> ↗</span></span>
+                <span class="sr-only">(새 창)</span>
+            </a>
+
+            <!-- 관련 사이트 띠 배너 (모두 새 창으로 이동). 배너를 더하거나 빼려면 <a> 블록을 복사·삭제한다. -->
             <div class="mt-10 sm:mt-12">
-                <h2 class="text-sm font-bold text-gray-500 mb-3 tracking-tight">대구상공회의소 바로가기</h2>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <h2 class="text-sm font-bold text-gray-500 mb-3 tracking-tight">관련 사이트 바로가기</h2>
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                     <a href="https://www.dcci.or.kr/" target="_blank" rel="noopener noreferrer"
-                        class="group flex items-center gap-4 bg-white rounded-xl border border-gray-200 p-4 sm:p-5 hover:border-blue-400 hover:shadow-lg transition-all duration-300">
-                        <div class="flex-shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-lg bg-blue-50 flex items-center justify-center">
-                            <svg class="w-8 h-8 text-blue-800" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                        class="group relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-900 to-blue-600 text-white p-4 sm:p-6 min-h-[120px] sm:min-h-[150px] flex flex-col justify-between shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                        <div class="absolute -right-6 -bottom-6 w-20 h-20 sm:w-28 sm:h-28 rounded-full bg-white/10"></div>
+                        <div class="absolute right-3 top-3 sm:right-4 sm:top-4 opacity-30"><svg class="w-8 h-8 sm:w-12 sm:h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg></div>
+                        <div class="relative">
+                            <p class="text-[11px] sm:text-xs font-bold text-white/80 tracking-wide">대구상공회의소</p>
+                            <p class="text-base sm:text-xl font-extrabold tracking-tight mt-1 break-keep leading-snug">공식 홈페이지</p>
+                            <p class="hidden sm:block text-sm text-white/90 mt-1 break-keep">상의 소식·회원 서비스·경제 정보</p>
                         </div>
-                        <div class="flex-grow min-w-0">
-                            <p class="text-base sm:text-lg font-extrabold text-gray-900 tracking-tight">대구상공회의소 홈페이지</p>
-                            <p class="text-xs sm:text-sm text-gray-500 mt-0.5 break-keep">상의 소식, 회원 서비스, 경제 정보</p>
-                            <p class="text-xs text-blue-700 font-bold mt-1">www.dcci.or.kr</p>
-                        </div>
-                        <svg class="flex-shrink-0 w-5 h-5 text-gray-400 group-hover:text-blue-700 transform group-hover:translate-x-1 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                        <p class="relative mt-3 sm:mt-4 inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-white/90"><span class="hidden sm:inline">www.dcci.or.kr</span><span class="sm:hidden">바로가기</span> <svg class="w-4 h-4 transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg></p>
                         <span class="sr-only">(새 창)</span>
                     </a>
                     <a href="https://blog.naver.com/dcciplus" target="_blank" rel="noopener noreferrer"
-                        class="group flex items-center gap-4 bg-white rounded-xl border border-gray-200 p-4 sm:p-5 hover:border-green-500 hover:shadow-lg transition-all duration-300">
-                        <div class="flex-shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-lg bg-green-50 flex items-center justify-center">
-                            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg>
+                        class="group relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-700 to-green-500 text-white p-4 sm:p-6 min-h-[120px] sm:min-h-[150px] flex flex-col justify-between shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                        <div class="absolute -right-6 -bottom-6 w-20 h-20 sm:w-28 sm:h-28 rounded-full bg-white/10"></div>
+                        <div class="absolute right-3 top-3 sm:right-4 sm:top-4 opacity-30"><svg class="w-8 h-8 sm:w-12 sm:h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg></div>
+                        <div class="relative">
+                            <p class="text-[11px] sm:text-xs font-bold text-white/80 tracking-wide">대구상공회의소</p>
+                            <p class="text-base sm:text-xl font-extrabold tracking-tight mt-1 break-keep leading-snug">공식 블로그</p>
+                            <p class="hidden sm:block text-sm text-white/90 mt-1 break-keep">교육·행사 소식과 현장 이야기</p>
                         </div>
-                        <div class="flex-grow min-w-0">
-                            <p class="text-base sm:text-lg font-extrabold text-gray-900 tracking-tight">대구상공회의소 공식 블로그</p>
-                            <p class="text-xs sm:text-sm text-gray-500 mt-0.5 break-keep">교육·행사 소식과 생생한 현장 이야기</p>
-                            <p class="text-xs text-green-700 font-bold mt-1">blog.naver.com/dcciplus</p>
+                        <p class="relative mt-3 sm:mt-4 inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-white/90"><span class="hidden sm:inline">blog.naver.com/dcciplus</span><span class="sm:hidden">바로가기</span> <svg class="w-4 h-4 transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg></p>
+                        <span class="sr-only">(새 창)</span>
+                    </a>
+                    <a href="https://bizcampus.korcham.net/" target="_blank" rel="noopener noreferrer"
+                        class="group relative overflow-hidden rounded-xl bg-gradient-to-br from-sky-700 to-cyan-500 text-white p-4 sm:p-6 min-h-[120px] sm:min-h-[150px] flex flex-col justify-between shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                        <div class="absolute -right-6 -bottom-6 w-20 h-20 sm:w-28 sm:h-28 rounded-full bg-white/10"></div>
+                        <div class="absolute right-3 top-3 sm:right-4 sm:top-4 opacity-30"><svg class="w-8 h-8 sm:w-12 sm:h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg></div>
+                        <div class="relative">
+                            <p class="text-[11px] sm:text-xs font-bold text-white/80 tracking-wide">대한상공회의소</p>
+                            <p class="text-base sm:text-xl font-extrabold tracking-tight mt-1 break-keep leading-snug">비즈캠퍼스</p>
+                            <p class="hidden sm:block text-sm text-white/90 mt-1 break-keep">온라인 직무·법정의무교육</p>
                         </div>
-                        <svg class="flex-shrink-0 w-5 h-5 text-gray-400 group-hover:text-green-600 transform group-hover:translate-x-1 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                        <p class="relative mt-3 sm:mt-4 inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-white/90"><span class="hidden sm:inline">bizcampus.korcham.net</span><span class="sm:hidden">바로가기</span> <svg class="w-4 h-4 transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg></p>
+                        <span class="sr-only">(새 창)</span>
+                    </a>
+                    <a href="https://hi.korchamhrd.net/education/professionalSkillEduList.do?rootMenuId=5226&amp;menuId=5226" target="_blank" rel="noopener noreferrer"
+                        class="group relative overflow-hidden rounded-xl bg-gradient-to-br from-indigo-800 to-violet-600 text-white p-4 sm:p-6 min-h-[120px] sm:min-h-[150px] flex flex-col justify-between shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                        <div class="absolute -right-6 -bottom-6 w-20 h-20 sm:w-28 sm:h-28 rounded-full bg-white/10"></div>
+                        <div class="absolute right-3 top-3 sm:right-4 sm:top-4 opacity-30"><svg class="w-8 h-8 sm:w-12 sm:h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg></div>
+                        <div class="relative">
+                            <p class="text-[11px] sm:text-xs font-bold text-white/80 tracking-wide">대한상공회의소</p>
+                            <p class="text-base sm:text-xl font-extrabold tracking-tight mt-1 break-keep leading-snug">직업계고 채용연계형 직무교육</p>
+                            <p class="hidden sm:block text-sm text-white/90 mt-1 break-keep">직무교육과정 지원사업 안내</p>
+                        </div>
+                        <p class="relative mt-3 sm:mt-4 inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold text-white/90"><span class="hidden sm:inline">hi.korchamhrd.net</span><span class="sm:hidden">바로가기</span> <svg class="w-4 h-4 transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg></p>
                         <span class="sr-only">(새 창)</span>
                     </a>
                 </div>
