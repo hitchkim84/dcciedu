@@ -27,6 +27,8 @@ function resetDb() {
     member_companies: []
   };
   visitClientKeys = [];
+  visitSources = [];
+  visitFromMissing = false;
   outboundCalls = [];
   outboundBodies = [];
   solapiMode = 'ok';
@@ -149,6 +151,8 @@ let lastRpcParams = null;
 let lastRpcClientKey = null;
 let lastLookupClientKey = null;
 let visitClientKeys = [];
+let visitSources = [];
+let visitFromMissing = false;
 let atomicCourseApplyHook = null; // 시험용: 신청 함수 실패 상황 흉내
 function atomicCourseApply(p) {
   lastRpcParams = p;
@@ -200,6 +204,14 @@ function createClient(url, key, opts = {}) {
       const list = [...new Set(params.p_biz_nos.map(x => String(x).replace(/\D/g, '')).filter(x => /^\d{10}$/.test(x)))];
       db.member_companies = list.map(biz_no => ({ biz_no, created_at: '2026-10-12T00:00:00Z' }));
       return { data: list.length, error: null };
+    }
+    if (name === 'count_visit_from') {
+      visitClientKeys.push(client.key);
+      if (client.key !== 'service') return raise('permission denied for function count_visit_from');
+      if (visitFromMissing) return raise('Could not find the function public.count_visit_from(p_source)');
+      db.daily_visits += 1;
+      visitSources.push(params.p_source);
+      return { data: null, error: null };
     }
     if (name === 'count_visit') {
       visitClientKeys.push(client.key);
@@ -841,12 +853,12 @@ test('alimtalk: SMS fallback only when a sender number is set', async () => {
 });
 
 // 접속 횟수(sql/15): 서버 키로 날짜별 숫자만 올리고, 로봇은 세지 않으며, 실패해도 홈페이지에 영향이 없다.
-function visit(handler, ua) {
+function visit(handler, ua, extra = {}) {
   return handler({
     httpMethod: 'POST',
     queryStringParameters: { type: 'public' },
     headers: ua === undefined ? {} : { 'user-agent': ua },
-    body: new URLSearchParams({ action: 'visit' }).toString(),
+    body: new URLSearchParams({ action: 'visit', ...extra }).toString(),
     isBase64Encoded: false
   }).then(res => ({ ...res, json: JSON.parse(res.body) }));
 }
@@ -865,6 +877,40 @@ test('visit: counted once per call with the server key, nothing personal stored,
   assert.strictEqual(db.education_apply.length, before);
   assert.deepStrictEqual(outboundCalls, []);
   assert.strictEqual(res.headers['Cache-Control'], 'no-store');
+});
+
+test('visit source: from tag wins, otherwise referrer site type; only short safe names are stored', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const cases = [
+    [{ from: 'news' }, CHROME_UA, 'news'],
+    [{ from: 'Mail_2026-11' }, CHROME_UA, 'mail_2026-11'],
+    [{ from: '<script>', ref: 'search.naver.com' }, CHROME_UA, 'naver'],
+    [{ from: 'x'.repeat(21) }, CHROME_UA, 'direct'],
+    [{}, CHROME_UA, 'direct'],
+    [{}, KAKAO_UA, 'kakaotalk'],
+    [{ ref: 'm.search.naver.com' }, CHROME_UA, 'naver'],
+    [{ ref: 'www.google.co.kr' }, CHROME_UA, 'google'],
+    [{ ref: 'search.daum.net' }, CHROME_UA, 'daum'],
+    [{ ref: 'pf.kakao.com' }, CHROME_UA, 'kakao'],
+    [{ ref: 'www.dcci.or.kr' }, CHROME_UA, 'dcci'],
+    [{ ref: 'bizcampus.korcham.net' }, CHROME_UA, 'korcham'],
+    [{ ref: 'dcciedu.co.kr' }, CHROME_UA, 'direct'],
+    [{ ref: 'evil.dcci.or.kr.example.com' }, CHROME_UA, 'etc'],
+    [{ ref: 'https://x.com/?q=홍길동' }, CHROME_UA, 'etc']
+  ];
+  for (const [extra, ua] of cases) assert.strictEqual((await visit(handler, ua, extra)).statusCode, 200);
+  assert.deepStrictEqual(visitSources, cases.map(c => c[2]));
+  assert.strictEqual(db.daily_visits, cases.length);
+  assert.ok(visitClientKeys.every(k => k === 'service'));
+});
+
+test('visit source: before sql/19 the daily total is still counted', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  visitFromMissing = true;
+  const res = await visit(handler, CHROME_UA, { from: 'news' });
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(db.daily_visits, 1);
+  assert.deepStrictEqual(visitSources, []);
 });
 
 test('visit: bots and requests without a browser are not counted', async () => {

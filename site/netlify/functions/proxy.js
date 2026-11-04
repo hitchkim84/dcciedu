@@ -374,11 +374,34 @@ async function handleApply(reqBody, clientIp) {
 // 홈페이지 접속 횟수: 오늘 날짜(한국 시간)의 숫자만 1 올린다(sql/15). IP 등 개인정보는 저장하지 않는다.
 // 검색 로봇은 세지 않는다. 기록에 실패해도 홈페이지 이용에는 영향이 없다.
 const BOT_UA_RE = /bot|crawl|spider|slurp|yeti|daumoa|preview|headless|monitor|curl|wget|python|node-fetch/i;
-async function handleVisit(headers) {
+// 유입 경로(sql/19): 홍보 링크 꼬리표(?from=news)가 있으면 그 이름, 없으면 들어온 사이트 종류만 짧게 센다.
+// 화면에서는 앞 사이트의 주소 이름(host)만 보내고, 전체 주소·검색어는 보내지 않는다.
+const VISIT_FROM_RE = /^[a-z0-9_-]{1,20}$/;
+const VISIT_REF_RULES = [
+  [/(^|\.)dcciedu\.co\.kr$/, 'direct'], [/(^|\.)dcci\.or\.kr$/, 'dcci'], [/(^|\.)korcham\.net$/, 'korcham'],
+  [/(^|\.)naver\.(com|net)$/, 'naver'], [/(^|\.)google\./, 'google'], [/(^|\.)daum\.net$/, 'daum'],
+  [/(^|\.)kakao\.com$/, 'kakao'], [/(^|\.)bing\.com$/, 'bing']
+];
+function visitSource(reqBody, ua) {
+  const from = str(reqBody.from).toLowerCase();
+  if (VISIT_FROM_RE.test(from)) return from;
+  if (/KAKAOTALK/i.test(ua)) return 'kakaotalk';
+  const ref = str(reqBody.ref).toLowerCase();
+  if (!ref) return 'direct';
+  if (!/^[a-z0-9.-]{1,253}$/.test(ref)) return 'etc';
+  const rule = VISIT_REF_RULES.find(([re]) => re.test(ref));
+  return rule ? rule[1] : 'etc';
+}
+
+async function handleVisit(headers, reqBody) {
   const ua = headers['user-agent'] || headers['User-Agent'] || '';
   if (adminDbClient && ua && !BOT_UA_RE.test(ua)) {
-    const { error } = await adminDbClient.rpc('count_visit');
-    if (error) console.error('Visit count failed:', error.message);
+    const { error } = await adminDbClient.rpc('count_visit_from', { p_source: visitSource(reqBody, ua) });
+    if (error) {
+      // sql/19 실행 전이면 날짜별 합계만 센다.
+      const { error: e2 } = await adminDbClient.rpc('count_visit');
+      if (e2) console.error('Visit count failed:', e2.message);
+    }
   }
   return jsonRes(200, { result: 'success' });
 }
@@ -603,7 +626,7 @@ exports.handler = async function(event, context) {
       }
 
       if (action === 'visit' && isPublic) {
-        return await handleVisit(event.headers || {});
+        return await handleVisit(event.headers || {}, reqBody);
       }
 
       if (action === 'apply') {
