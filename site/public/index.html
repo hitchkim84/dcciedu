@@ -194,6 +194,21 @@
                 <p class="sm:hidden text-xs text-gray-400 mt-2 text-center">↔ 좌우로 밀어서 일정을 확인하세요</p>
             </div>
 
+            <!-- 카카오톡 채널 친구 추가 띠 (새 창). 채널 URL은 카카오톡 채널 관리자센터의 '채널 URL' + /friend -->
+            <!-- TODO: 채널 URL을 받으면 href를 바꾸고 아래 class의 맨 앞 'hidden'을 지운다(주소가 없으면 숨김). -->
+            <a href="KAKAO_CHANNEL_URL" target="_blank" rel="noopener noreferrer"
+                class="hidden group mt-8 sm:mt-10 flex items-center gap-3 sm:gap-5 rounded-xl bg-[#FEE500] px-4 py-4 sm:px-6 sm:py-5 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
+                <div class="flex-shrink-0 w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-[#3C1E1E] flex items-center justify-center">
+                    <svg class="w-6 h-6 sm:w-7 sm:h-7 text-[#FEE500]" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C6.48 3 2 6.58 2 11c0 2.85 1.86 5.35 4.66 6.77l-.95 3.48c-.08.31.27.56.54.38l4.13-2.74c.53.07 1.07.11 1.62.11 5.52 0 10-3.58 10-8S17.52 3 12 3z"></path></svg>
+                </div>
+                <div class="flex-grow min-w-0">
+                    <p class="text-sm sm:text-lg font-extrabold text-[#3C1E1E] tracking-tight break-keep">카카오톡 채널 '대구상공회의소' 친구 추가</p>
+                    <p class="text-xs sm:text-sm text-[#3C1E1E]/80 mt-0.5 break-keep">새 교육 과정과 상의 소식을 카톡으로 받아보세요</p>
+                </div>
+                <span class="flex-shrink-0 inline-flex items-center gap-1 rounded-full bg-[#3C1E1E] text-[#FEE500] text-xs sm:text-sm font-bold px-3 py-2 sm:px-4 group-hover:bg-black transition-colors">친구 추가<span class="hidden sm:inline"> ↗</span></span>
+                <span class="sr-only">(새 창)</span>
+            </a>
+
             <!-- 관련 사이트 띠 배너 (모두 새 창으로 이동). 배너를 더하거나 빼려면 <a> 블록을 복사·삭제한다. -->
             <div class="mt-10 sm:mt-12">
                 <h2 class="text-sm font-bold text-gray-500 mb-3 tracking-tight">관련 사이트 바로가기</h2>
