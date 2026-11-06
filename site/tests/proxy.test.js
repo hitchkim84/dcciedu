@@ -246,7 +246,7 @@ function loadHandler(env) {
   for (const k of ['SUPABASE_URL', 'SUPABASE_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_SCRIPT_URL', 'APPS_SCRIPT_SECRET',
     'TURNSTILE_SECRET', 'TURNSTILE_DISABLED', 'TURNSTILE_HOSTNAMES',
     'SOLAPI_API_KEY', 'SOLAPI_API_SECRET', 'SOLAPI_PFID', 'SOLAPI_TEMPLATE_ID', 'SOLAPI_SENDER',
-    'SOLAPI_PAY_TEMPLATE_ID', 'PAYMENT_ACCOUNT']) delete process.env[k];
+    'SOLAPI_PAY_TEMPLATE_ID', 'PAYMENT_ACCOUNT', 'SOLAPI_CANCEL_TEMPLATE_ID']) delete process.env[k];
   // 운영과 같이 로봇 확인 키가 있는 상태가 기본. env에 undefined를 주면 그 값은 없는 상태로 테스트한다.
   const merged = { SUPABASE_URL: 'https://example.supabase.co', SUPABASE_KEY: 'anon', TURNSTILE_SECRET: 'ts-secret', ...env };
   for (const [k, v] of Object.entries(merged)) if (v !== undefined) process.env[k] = v;
@@ -1096,6 +1096,46 @@ test('pay notice: super admin only, needs template and account, failures are rep
   const res = await adminPost(handler, { action: 'send_pay_notice', ids: ids[1] });
   assert.deepStrictEqual([res.json.sent, res.json.failed], [0, 1]);
   assert.ok(!db.education_apply.find(a => a.id === ids[1]).pay_notice_sent_at);
+});
+
+// 폐강 안내(sql/20): 한 과정의 신청자 전원에게 이름·과정명·교육일시만 보낸다. 슈퍼관리자만, 이미 보낸 신청은 force일 때만.
+test('cancel notice: sends only name, course and date to every applicant of the course; skips already-sent and bad phones', async () => {
+  const handler = loadHandler({ ...PAY_ENV, SOLAPI_CANCEL_TEMPLATE_ID: 'TPL_CANCEL' });
+  const ids = payApps();
+  db.education_apply.find(a => a.id === ids[0]).cancel_notice_sent_at = '2026-11-04T00:00:00Z';
+  db.education_apply.find(a => a.id === ids[2]).phone = '12';
+  const total = db.education_apply.filter(a => a.course_id === COURSE_ID).length;
+  const res = await adminPost(handler, { action: 'send_cancel_notice', course_id: COURSE_ID });
+  assert.strictEqual(res.statusCode, 200);
+  assert.deepStrictEqual([res.json.skipped.already, res.json.skipped.badPhone], [1, 1]);
+  assert.strictEqual(res.json.sent, total - 2);
+  const msgs = solapiRequests.map(r => r.body.message);
+  assert.ok(msgs.every(m => m.kakaoOptions.templateId === 'TPL_CANCEL'));
+  const v = msgs.find(m => m.to === '01033334444').kakaoOptions.variables;
+  assert.deepStrictEqual(v, { '#{이름}': '비회원', '#{과정명}': '세무회계 실무', '#{교육일시}': '2026. 11. 12(목) 09:30~12:30' });
+  assert.ok(db.education_apply.find(a => a.id === ids[1]).cancel_notice_sent_at);
+  assert.ok(!db.education_apply.find(a => a.id === ids[2]).cancel_notice_sent_at);
+  assert.ok(db.education_apply.filter(a => a.course_id !== COURSE_ID).every(a => !a.cancel_notice_sent_at));
+  const log = db.admin_access_log.find(l => l.action === 'send_cancel_notice');
+  assert.ok(log && !JSON.stringify(log).includes('010'));
+  solapiRequests = [];
+  const again = await adminPost(handler, { action: 'send_cancel_notice', course_id: COURSE_ID });
+  assert.strictEqual(again.json.sent, 0);
+  const forced = await adminPost(handler, { action: 'send_cancel_notice', course_id: COURSE_ID, force: '1' });
+  assert.strictEqual(forced.json.sent, total - 1);
+});
+
+test('cancel notice: super admin only, needs the template, bad course id rejected', async () => {
+  let handler = loadHandler({ ...PAY_ENV, SOLAPI_CANCEL_TEMPLATE_ID: 'TPL_CANCEL' });
+  payApps();
+  for (const token of [STAFF_TOKEN, ADMIN_AAL1_TOKEN]) {
+    assert.strictEqual((await adminPost(handler, { action: 'send_cancel_notice', course_id: COURSE_ID }, token)).statusCode, 403);
+  }
+  assert.strictEqual(solapiRequests.length, 0);
+  assert.strictEqual((await adminPost(handler, { action: 'send_cancel_notice', course_id: 'x' })).statusCode, 400);
+  handler = loadHandler({ ...PAY_ENV, SOLAPI_CANCEL_TEMPLATE_ID: undefined });
+  assert.strictEqual((await adminPost(handler, { action: 'send_cancel_notice', course_id: COURSE_ID })).statusCode, 503);
+  assert.strictEqual(solapiRequests.length, 0);
 });
 
 // ---- 정밀점검(2026-10-13) 보강 ----
