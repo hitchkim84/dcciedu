@@ -94,6 +94,8 @@ run_sql sql/19_visit_sources.sql
 run_sql sql/19_visit_sources.sql
 run_sql sql/20_cancel_notice.sql
 run_sql sql/20_cancel_notice.sql
+run_sql sql/21_supplies_class_notice.sql
+run_sql sql/21_supplies_class_notice.sql
 
 echo "[적용 후] check_security.sql 판정 (종료일 미입력만 남아야 함)"
 check_report

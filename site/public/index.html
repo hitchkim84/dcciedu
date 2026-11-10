@@ -341,6 +341,14 @@
                                 <span class="text-gray-500 w-20 flex-shrink-0 font-medium">장소</span>
                                 <span id="detail-place" class="font-medium text-gray-900"></span>
                             </div>
+                            <div id="detail-supplies-row" class="flex items-start hidden">
+                                <span class="text-gray-500 w-20 flex-shrink-0 font-medium">준비물</span>
+                                <span id="detail-supplies" class="font-medium text-gray-900"></span>
+                            </div>
+                            <div class="flex items-start">
+                                <span class="text-gray-500 w-20 flex-shrink-0 font-medium">주차</span>
+                                <span class="font-medium text-gray-900 break-keep">주차장이 협소하니 대중교통을 이용해 주세요. 차량은 맞은편 <b>현대시티아울렛 주차장(무료)</b>을 이용해 주세요.</span>
+                            </div>
                             <div class="flex items-start">
                                 <span class="text-gray-500 w-20 flex-shrink-0 font-medium">교육인원</span>
                                 <span id="detail-capacity" class="font-medium text-blue-700"></span>
@@ -477,6 +485,13 @@
                                         <p class="text-gray-500 mt-1 leading-relaxed">
                                             노선: 156, 309, 425, 524, 651, 724, 909, 937, 동구1, 동구1-1, 수성4
                                         </p>
+                                    </div>
+                                </div>
+                                <div class="flex items-start border-t border-gray-200 pt-3">
+                                    <span class="bg-amber-100 text-amber-800 text-[11px] px-2 py-0.5 rounded font-bold mr-3 mt-0.5 whitespace-nowrap">주차</span>
+                                    <div>
+                                        <p class="font-semibold text-gray-900 mb-1">맞은편 현대시티아울렛 주차장 (무료)</p>
+                                        <p class="text-gray-600 break-keep">상공회의소 주차장이 협소하여 주차가 어렵습니다. 가급적 대중교통을 이용해 주시고, 차량 이용 시 맞은편 현대시티아울렛 주차장을 이용해 주세요.</p>
                                     </div>
                                 </div>
                             </div>
@@ -994,6 +1009,8 @@
             document.getElementById('detail-payment-info').innerText = data.paymentInfo || "무료 / 별도 문의";
             document.getElementById('detail-cost').innerText = feeText(data) || data.cost || "무료 / 별도 문의";
             document.getElementById('detail-other-info').innerText = data.otherInfo || "없음";
+            document.getElementById('detail-supplies').innerText = data.supplies || '';
+            document.getElementById('detail-supplies-row').classList.toggle('hidden', !data.supplies);
             document.getElementById('detail-contact').innerText = data.contact || "기업지원부 통상진흥팀 (053-222-3109)";
             document.getElementById('detail-capacity').innerText = cap > 0 ? `신청 ${cur}명 / 정원 ${cap}명` : "제한 없음";
 

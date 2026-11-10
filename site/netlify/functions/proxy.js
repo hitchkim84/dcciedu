@@ -134,6 +134,7 @@ function mapCourse(course, current) {
     memberFee: course.member_fee ?? null,
     nonmemberFee: course.nonmember_fee ?? null,
     otherInfo: course.other_info || "",
+    supplies: course.supplies || "",
     current: current
   };
 }
@@ -444,6 +445,7 @@ function validateCourse(reqBody) {
   if (!str(reqBody.title)) return '과정명을 입력해주세요.';
   if (!DATE_RE.test(str(reqBody.endDate))) return '교육 종료일을 입력해주세요. (개인정보 파기 기준)';
   if (str(reqBody.deadline) && !DATE_RE.test(str(reqBody.deadline))) return '신청 마감일 형식이 올바르지 않습니다.';
+  if (str(reqBody.supplies).length > 300) return '준비물은 300자 이내로 입력해주세요.';
   for (const k of ['memberFee', 'nonmemberFee']) {
     const v = str(reqBody[k]).replace(/,/g, '');
     if (v && !/^\d{1,8}$/.test(v)) return '교육비는 숫자(원)로 입력해주세요.';
@@ -475,7 +477,8 @@ function courseFields(reqBody) {
     payment_info: (reqBody.cost || "") + "|||" + (reqBody.paymentInfo || ""),
     member_fee: feeValue(reqBody.memberFee),
     nonmember_fee: feeValue(reqBody.nonmemberFee),
-    other_info: reqBody.otherInfo
+    other_info: reqBody.otherInfo,
+    supplies: str(reqBody.supplies)
   };
 }
 
@@ -598,6 +601,7 @@ exports.handler = async function(event, context) {
             appliedFee: app.applied_fee ?? "",
             payNoticeAt: app.pay_notice_sent_at ? formatTimestamp(app.pay_notice_sent_at) : "",
             cancelNoticeAt: app.cancel_notice_sent_at ? formatTimestamp(app.cancel_notice_sent_at) : "",
+            classNoticeAt: app.class_notice_sent_at ? formatTimestamp(app.class_notice_sent_at) : "",
             paidAt: app.paid_at ? formatTimestamp(app.paid_at) : "",
             memberType: "",
             feeStatus: "",
@@ -754,46 +758,54 @@ exports.handler = async function(event, context) {
         return jsonRes(200, { result: 'success', sent: sentIds.length, failed, skipped });
       }
 
-      // 교육 폐강 안내 알림톡(슈퍼관리자만, sql/20). 한 과정의 신청자 전원에게 보낸다. 이미 보낸 신청은 force=1일 때만 다시 보낸다.
-      // 템플릿: SOLAPI_CANCEL_TEMPLATE_ID. 보내는 정보: 성명·휴대폰·과정명·교육일시(회사명·사업자번호·이메일·교육비는 보내지 않음)
-      if (action === 'send_cancel_notice') {
+      // 과정 신청자 전원에게 보내는 알림톡(슈퍼관리자만). 이미 보낸 신청은 force=1일 때만 다시 보낸다.
+      // - send_cancel_notice: 교육 폐강 안내(sql/20, SOLAPI_CANCEL_TEMPLATE_ID) — 성명·휴대폰·과정명·교육일시
+      // - send_class_notice: 교육 안내(전날, 일시·장소·주차) (sql/21, SOLAPI_CLASS_TEMPLATE_ID) — 성명·휴대폰·과정명·교육일시·장소.
+      //   폐강 안내를 받은 신청은 빼고 보낸다.
+      // 회사명·사업자번호·이메일·교육비는 보내지 않는다.
+      if (action === 'send_cancel_notice' || action === 'send_class_notice') {
+        const isCancel = action === 'send_cancel_notice';
+        const templateId = isCancel ? process.env.SOLAPI_CANCEL_TEMPLATE_ID : process.env.SOLAPI_CLASS_TEMPLATE_ID;
+        const sentCol = isCancel ? 'cancel_notice_sent_at' : 'class_notice_sent_at';
+        const label = isCancel ? '폐강 안내' : '교육 안내';
         const courseId = str(reqBody.course_id);
         if (!UUID_RE.test(courseId)) return jsonRes(400, { result: 'error', msg: '잘못된 요청입니다.' });
-        if (!solapiReady(process.env.SOLAPI_CANCEL_TEMPLATE_ID) || !adminDbClient) {
-          return jsonRes(503, { result: 'error', msg: '폐강 안내 설정(템플릿)이 아직 없습니다.' });
+        if (!solapiReady(templateId) || !adminDbClient) {
+          return jsonRes(503, { result: 'error', msg: `${label} 설정(템플릿)이 아직 없습니다.` });
         }
         const force = str(reqBody.force) === '1';
-        const { data: courses, error: courseError } = await dbClient.from('courses').select('id, title, date').eq('id', courseId).limit(1);
+        const { data: courses, error: courseError } = await dbClient.from('courses').select('id, title, date, place').eq('id', courseId).limit(1);
         if (courseError) throw courseError;
         if (!courses || courses.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 과정을 찾을 수 없습니다.' });
         const c = courses[0];
         const { data: apps, error: appsError } = await dbClient.from('education_apply')
-          .select('id, name, phone, cancel_notice_sent_at').eq('course_id', courseId).limit(MAX_BULK_DELETE + 1);
+          .select(isCancel ? 'id, name, phone, cancel_notice_sent_at' : 'id, name, phone, cancel_notice_sent_at, class_notice_sent_at')
+          .eq('course_id', courseId).limit(MAX_BULK_DELETE + 1);
         if (appsError) throw appsError;
         if (!apps || apps.length === 0) return jsonRes(400, { result: 'error', msg: '이 과정에는 신청자가 없습니다.' });
         if (apps.length > MAX_BULK_DELETE) return jsonRes(400, { result: 'error', msg: `신청자가 ${MAX_BULK_DELETE}명을 넘어 한 번에 보낼 수 없습니다.` });
-        const skipped = { already: 0, badPhone: 0 };
+        const skipped = { already: 0, badPhone: 0, cancelled: 0 };
         const targets = apps.filter(a => {
-          if (a.cancel_notice_sent_at && !force) { skipped.already++; return false; }
+          if (!isCancel && a.cancel_notice_sent_at) { skipped.cancelled++; return false; }
+          if (a[sentCol] && !force) { skipped.already++; return false; }
           const digits = String(a.phone || '').replace(/\D/g, '');
           if (digits.length < 9 || digits.length > 11) { skipped.badPhone++; return false; }
           return true;
         });
+        const vars = a => isCancel
+          ? { '#{이름}': a.name || '', '#{과정명}': c.title || '', '#{교육일시}': c.date || '' }
+          : { '#{이름}': a.name || '', '#{과정명}': c.title || '', '#{교육일시}': c.date || '', '#{장소}': c.place || '대구상공회의소' };
         const results = await mapLimit(targets, 5, async a => ({
           id: a.id,
-          r: await solapiSend(process.env.SOLAPI_CANCEL_TEMPLATE_ID, String(a.phone).replace(/\D/g, ''), {
-            '#{이름}': a.name || '',
-            '#{과정명}': c.title || '',
-            '#{교육일시}': c.date || ''
-          })
+          r: await solapiSend(templateId, String(a.phone).replace(/\D/g, ''), vars(a))
         }));
         const sentIds = results.filter(x => x.r === 'sent').map(x => x.id);
         if (sentIds.length) {
-          const { error: markError } = await adminDbClient.from('education_apply').update({ cancel_notice_sent_at: new Date().toISOString() }).in('id', sentIds);
-          if (markError) console.error('cancel_notice_sent_at update failed:', markError.message);
+          const { error: markError } = await adminDbClient.from('education_apply').update({ [sentCol]: new Date().toISOString() }).in('id', sentIds);
+          if (markError) console.error(`${sentCol} update failed:`, markError.message);
         }
         const failed = results.length - sentIds.length;
-        await logAccess(adminUser, adminRole, 'send_cancel_notice', `과정 ${courseId}, 신청 ${apps.length}건, 발송 ${sentIds.length}건, 실패 ${failed}건`);
+        await logAccess(adminUser, adminRole, action, `과정 ${courseId}, 신청 ${apps.length}건, 발송 ${sentIds.length}건, 실패 ${failed}건`);
         return jsonRes(200, { result: 'success', sent: sentIds.length, failed, skipped });
       }
 
