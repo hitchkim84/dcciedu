@@ -369,7 +369,7 @@ function submitCourse() {
     if (editingCourseId) formData.append('id', editingCourseId);
 
     // 데이터 매핑
-    ['category', 'title', 'date', 'place', 'capacity', 'deadline', 'endDate', 'target', 'goal', 'content', 'instructor', 'instructorBio', 'contact', 'memberFee', 'nonmemberFee', 'cost', 'paymentInfo', 'otherInfo'].forEach(field => {
+    ['category', 'title', 'date', 'place', 'capacity', 'deadline', 'endDate', 'target', 'goal', 'content', 'instructor', 'instructorBio', 'contact', 'memberFee', 'nonmemberFee', 'cost', 'paymentInfo', 'otherInfo', 'supplies'].forEach(field => {
         const el = document.getElementById(field);
         if (el) formData.append(field, el.value);
     });
@@ -496,7 +496,7 @@ function escapeHtml(value) {
 }
 
 const APPLICANT_COLUMNS = [
-    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['payNoticeAt', '입금안내'], ['paidText', '입금확인'], ['cancelNoticeAt', '폐강안내'], ['dept', '부서'],
+    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['payNoticeAt', '입금안내'], ['paidText', '입금확인'], ['classNoticeAt', '교육안내'], ['cancelNoticeAt', '폐강안내'], ['dept', '부서'],
     ['position', '직위'], ['name', '성명'], ['phone', '연락처'], ['email', '이메일'], ['privacy', '개인정보동의']
 ];
 
@@ -552,26 +552,34 @@ function sendPayNotice(items, btn) {
         .finally(() => { btn.disabled = false; });
 }
 
-// 교육 폐강 안내 알림톡(슈퍼관리자, sql/20). 한 과정의 신청자 전원에게 보낸다.
-function sendCancelNotice(btn) {
+// 과정 신청자 전원에게 보내는 알림톡(슈퍼관리자).
+// cancel: 교육 폐강 안내(sql/20) / class: 교육 안내(전날, 일시·장소·주차, sql/21, 폐강 안내 받은 사람은 서버에서 뺌)
+const COURSE_NOTICES = {
+    cancel: { action: 'send_cancel_notice', label: '폐강 안내', key: 'cancelNoticeAt',
+        warn: "홈페이지 신청 마감은 '교육 과정 관리'에서 신청 마감일을 지난 날짜로 바꿔 따로 해주세요." },
+    class: { action: 'send_class_notice', label: '교육 안내', key: 'classNoticeAt',
+        warn: '교육 일시·장소와 주차 안내(맞은편 현대시티아울렛 무료 주차)가 나갑니다. 폐강 안내를 받은 신청자는 빠집니다.' }
+};
+function sendCourseNotice(btn) {
+    const kind = COURSE_NOTICES[btn.dataset.kind];
     const item = statusCourses[Number(btn.dataset.idx)];
-    if (!item) return;
-    const apps = item.applicants || [];
-    if (apps.length === 0) return alert('이 과정에는 신청자가 없습니다.');
-    const sentBefore = apps.filter(a => a.cancelNoticeAt).length;
-    if (!confirm(`'${item.title}' 과정의 신청자 ${apps.length}명에게 폐강 안내 알림톡을 보내시겠습니까?\n\n보낸 뒤에는 되돌릴 수 없습니다.\n홈페이지 신청 마감은 '교육 과정 관리'에서 신청 마감일을 지난 날짜로 바꿔 따로 해주세요.`)) return;
+    if (!kind || !item) return;
+    const apps = (item.applicants || []).filter(a => btn.dataset.kind === 'cancel' || !a.cancelNoticeAt);
+    if (apps.length === 0) return alert('보낼 신청자가 없습니다.');
+    const sentBefore = apps.filter(a => a[kind.key]).length;
+    if (!confirm(`'${item.title}' 과정의 신청자 ${apps.length}명에게 ${kind.label} 알림톡을 보내시겠습니까?\n\n보낸 뒤에는 되돌릴 수 없습니다.\n${kind.warn}`)) return;
     let force = '0';
     if (sentBefore) {
         if (sentBefore === apps.length) {
-            if (!confirm(`이미 ${sentBefore}명 모두에게 폐강 안내를 보냈습니다. 다시 보내시겠습니까?`)) return;
+            if (!confirm(`이미 ${sentBefore}명 모두에게 ${kind.label}를 보냈습니다. 다시 보내시겠습니까?`)) return;
             force = '1';
-        } else if (confirm(`이 중 ${sentBefore}명은 이미 폐강 안내를 받았습니다. 그분들께도 다시 보내시겠습니까?\n(취소를 누르면 아직 받지 않은 ${apps.length - sentBefore}명에게만 보냅니다)`)) force = '1';
+        } else if (confirm(`이 중 ${sentBefore}명은 이미 ${kind.label}를 받았습니다. 그분들께도 다시 보내시겠습니까?\n(취소를 누르면 아직 받지 않은 ${apps.length - sentBefore}명에게만 보냅니다)`)) force = '1';
     }
     btn.disabled = true;
     fetch(scriptURL + '?type=admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + sessionToken },
-        body: new URLSearchParams({ action: 'send_cancel_notice', course_id: item.id, force })
+        body: new URLSearchParams({ action: kind.action, course_id: item.id, force })
     })
         .then(r => r.json())
         .then(result => {
@@ -580,12 +588,13 @@ function sendCancelNotice(btn) {
             const notes = [
                 result.failed ? `실패 ${result.failed}건 (잠시 후 다시 보내주세요)` : '',
                 sk.already ? `이미 보낸 ${sk.already}건 제외` : '',
+                sk.cancelled ? `폐강 안내 받은 ${sk.cancelled}건 제외` : '',
                 sk.badPhone ? `휴대폰 번호 오류 ${sk.badPhone}건 제외` : ''
             ].filter(Boolean).join('\n');
-            alert(`📨 폐강 안내 ${result.sent}건을 보냈습니다.${notes ? '\n' + notes : ''}`);
+            alert(`📨 ${kind.label} ${result.sent}건을 보냈습니다.${notes ? '\n' + notes : ''}`);
             fetchStatus();
         })
-        .catch(err => alert('⛔ 폐강 안내 실패: ' + err.message))
+        .catch(err => alert(`⛔ ${kind.label} 실패: ` + err.message))
         .finally(() => { btn.disabled = false; });
 }
 
@@ -673,7 +682,9 @@ function renderApplicantsTable(item, idx) {
             <div>
                 ${canDelete ? `<button type="button" data-action="send-pay-selected" data-idx="${idx}"
                     class="px-3 py-1 mr-2 text-xs font-bold text-green-700 border border-green-300 rounded hover:bg-green-50">선택 입금안내</button>` : ''}
-                ${canDelete ? `<button type="button" data-action="send-cancel-notice" data-idx="${idx}"
+                ${canDelete ? `<button type="button" data-action="send-course-notice" data-kind="class" data-idx="${idx}"
+                    class="px-3 py-1 mr-2 text-xs font-bold text-blue-700 border border-blue-300 rounded hover:bg-blue-50">교육안내 (전원)</button>` : ''}
+                ${canDelete ? `<button type="button" data-action="send-course-notice" data-kind="cancel" data-idx="${idx}"
                     class="px-3 py-1 mr-2 text-xs font-bold text-gray-700 border border-gray-400 rounded hover:bg-gray-100">폐강안내 (전원)</button>` : ''}
                 ${canDelete ? `<button type="button" data-action="delete-selected" data-idx="${idx}"
                     class="px-3 py-1 mr-2 text-xs font-bold text-red-600 border border-red-300 rounded hover:bg-red-50">선택 삭제</button>` : ''}
@@ -893,6 +904,7 @@ function loadCourseForEdit(id) {
     document.getElementById('nonmemberFee').value = data.nonmemberFee ?? '';
     document.getElementById('paymentInfo').value = data.paymentInfo;
     document.getElementById('otherInfo').value = data.otherInfo;
+    document.getElementById('supplies').value = data.supplies || '';
 
     // 일시(date) 필드 파싱해서 개별 입력란에 채우기
     try {
@@ -1116,7 +1128,7 @@ const ACTIONS = {
     'delete-course': el => deleteCourse(el.dataset.id),
     'set-fee-type': el => setFeeType(el),
     'set-paid': el => setPaid(el),
-    'send-cancel-notice': el => sendCancelNotice(el),
+    'send-course-notice': el => sendCourseNotice(el),
     'send-pay-notice': el => sendPayNotice([payItem(el)], el),
     'send-pay-selected': el => sendPayNotice([...document.querySelectorAll(`.app-check[data-course="${el.dataset.idx}"]:checked`)].map(payItem), el),
     'member-replace': el => replaceMembers(el),
