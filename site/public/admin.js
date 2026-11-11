@@ -664,55 +664,109 @@ function applicantCell(app, key, canEdit) {
     return escapeHtml(app[key]);
 }
 
+// 안내 알림톡 발송 현황을 작은 배지로(날짜는 마우스를 올리면 보인다)
+const NOTICE_BADGES = [
+    ['payNoticeAt', '입금안내', 'bg-green-50 text-green-700 border-green-200'],
+    ['classNoticeAt', '교육안내', 'bg-blue-50 text-blue-700 border-blue-200'],
+    ['surveyNoticeAt', '만족도', 'bg-purple-50 text-purple-700 border-purple-200'],
+    ['cancelNoticeAt', '폐강', 'bg-gray-100 text-gray-700 border-gray-300']
+];
+function noticeBadges(app) {
+    const html = NOTICE_BADGES.filter(([key]) => app[key]).map(([key, label, cls]) =>
+        `<span class="inline-block px-1.5 py-0.5 mr-1 mb-1 text-xs border rounded ${cls}" title="${escapeHtml(label + ' ' + app[key])}">${label}✓</span>`).join('');
+    return html || '<span class="text-xs text-gray-300">-</span>';
+}
+
+// 신청 1건 관리 메뉴(입금안내·회원 구분 바꾸기·삭제). 성명 바로 옆 칸에 두어 다른 줄과 헷갈리지 않게 한다.
+function rowMenu(app) {
+    const data = `data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"`;
+    return `<details class="relative">
+        <summary class="list-none cursor-pointer px-2 py-1 text-sm font-bold text-gray-600 border rounded hover:bg-gray-100 select-none" title="${escapeHtml(app.name)} 관리">⋯</summary>
+        <div class="absolute right-0 z-20 mt-1 w-36 bg-white border rounded shadow-lg py-1 text-left">
+            <div class="px-3 py-1 text-xs text-gray-500 border-b truncate">${escapeHtml(app.name)} · ${escapeHtml(app.bizName)}</div>
+            <button type="button" ${data} data-fee="${escapeHtml(app.feeText)}" data-label="${escapeHtml(app.feeLabel)}" data-sent="${escapeHtml(app.payNoticeAt)}"
+                data-action="send-pay-notice" class="block w-full text-left px-3 py-1.5 text-sm text-green-700 hover:bg-green-50">입금안내 보내기</button>
+            <button type="button" ${data} data-next="${app.feeType === 'member' ? 'nonmember' : 'member'}" data-action="set-fee-type"
+                class="block w-full text-left px-3 py-1.5 text-sm text-blue-700 hover:bg-blue-50">${app.feeType === 'member' ? '비회원사로 변경' : '회원사로 변경'}</button>
+            <button type="button" ${data} data-action="delete-application"
+                class="block w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 border-t">신청 삭제</button>
+        </div>
+    </details>`;
+}
+
+// 신청자 명단. 좌우 스크롤 없이 한 화면에 보이도록 칸을 합쳤다(전체 칸은 엑셀 다운로드에 그대로 있다).
 function renderApplicantsTable(item, idx) {
     const apps = sortedApplicants(item);
     if (apps.length === 0) {
         return '<p class="text-sm text-gray-500 py-2">신청자가 없습니다.</p>';
     }
-    // 삭제(개별·선택 삭제)는 슈퍼관리자에게만 보인다.
-    const canDelete = isSuperAdmin();
-    const checkHead = canDelete
-        ? `<th class="px-3 py-2"><input type="checkbox" data-action="check-all" data-idx="${idx}" aria-label="전체 선택"></th>` : '';
-    const head = APPLICANT_COLUMNS.map(([, label]) =>
-        `<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">${label}</th>`).join('')
-        + (canDelete ? '<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">관리</th>' : '');
+    // 체크·발송·삭제는 슈퍼관리자에게만 보인다.
+    const canEdit = isSuperAdmin();
+    const th = (label, cls = '') => `<th class="px-2 py-2 text-left text-xs font-bold text-gray-500 ${cls}">${label}</th>`;
+    const head = (canEdit ? `<th class="px-2 py-2 w-8"><input type="checkbox" data-action="check-all" data-idx="${idx}" aria-label="전체 선택"></th>` : '')
+        + th('No', 'w-8') + th('성명') + th('회사') + th('연락처') + th('교육비') + th('입금확인') + th('안내') + (canEdit ? th('', 'w-12') : '');
     const rows = apps.map((app, i) => `
-        <tr class="border-t">
-            ${canDelete ? `<td class="px-3 py-2"><input type="checkbox" class="app-check" data-course="${idx}" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}" data-fee="${escapeHtml(app.feeText)}" data-label="${escapeHtml(app.feeLabel)}" data-sent="${escapeHtml(app.payNoticeAt)}" aria-label="선택"></td>` : ''}
-            <td class="px-3 py-2 text-xs text-gray-500">${i + 1}</td>
-            ${APPLICANT_COLUMNS.map(([key]) => `<td class="px-3 py-2 text-sm text-gray-800">${applicantCell(app, key, canDelete)}</td>`).join('')}
-            ${canDelete ? `<td class="px-3 py-2"><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
-                data-fee="${escapeHtml(app.feeText)}" data-label="${escapeHtml(app.feeLabel)}" data-sent="${escapeHtml(app.payNoticeAt)}" data-action="send-pay-notice"
-                class="px-2 py-1 mr-1 text-xs font-bold text-green-700 border border-green-300 rounded hover:bg-green-50">입금안내</button><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
-                data-next="${app.feeType === 'member' ? 'nonmember' : 'member'}" data-action="set-fee-type"
-                class="px-2 py-1 mr-1 text-xs font-bold text-blue-700 border border-blue-300 rounded hover:bg-blue-50">${app.feeType === 'member' ? '비회원사로' : '회원사로'}</button><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
-                data-action="delete-application" class="px-2 py-1 text-xs font-bold text-red-600 border border-red-300 rounded hover:bg-red-50">삭제</button></td>` : ''}
+        <tr class="border-t align-top odd:bg-white even:bg-gray-50 hover:bg-yellow-50" data-row="${escapeHtml(app.id)}">
+            ${canEdit ? `<td class="px-2 py-2"><input type="checkbox" class="app-check" data-course="${idx}" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}" data-fee="${escapeHtml(app.feeText)}" data-label="${escapeHtml(app.feeLabel)}" data-sent="${escapeHtml(app.payNoticeAt)}" aria-label="${escapeHtml(app.name)} 선택"></td>` : ''}
+            <td class="px-2 py-2 text-xs text-gray-400">${i + 1}</td>
+            <td class="px-2 py-2"><div class="text-sm font-bold text-gray-900">${escapeHtml(app.name)}</div><div class="text-xs text-gray-500">${escapeHtml([app.position, app.dept].filter(Boolean).join(' · '))}</div></td>
+            <td class="px-2 py-2"><div class="text-sm text-gray-800">${escapeHtml(app.bizName)}</div><div class="text-xs text-gray-500">${escapeHtml(app.bizNo)}</div></td>
+            <td class="px-2 py-2"><div class="text-sm text-gray-800">${escapeHtml(app.phone)}</div><div class="text-xs text-gray-500 break-all">${escapeHtml(app.email)}</div></td>
+            <td class="px-2 py-2"><div class="text-sm text-gray-800">${escapeHtml(app.feeText)}</div><div class="text-xs ${app.feeType === 'member' ? 'text-blue-600' : 'text-gray-500'}">${escapeHtml(app.feeLabel)}</div></td>
+            <td class="px-2 py-2 text-sm">${canEdit ? `<label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" data-action="set-paid"
+                data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"${app.paidAt ? ' checked' : ''}
+                aria-label="${escapeHtml(app.name)} 입금확인"><span class="${app.paidAt ? 'text-green-700 font-bold' : 'text-gray-400'}">${app.paidAt ? '완료' : '미입금'}</span></label>`
+                : `<span class="${app.paidAt ? 'text-green-700 font-bold' : 'text-gray-400'}">${app.paidAt ? '완료' : '미입금'}</span>`}${app.paidAt ? `<div class="text-xs text-gray-400">${escapeHtml(String(app.paidAt).slice(0, 13))}</div>` : ''}</td>
+            <td class="px-2 py-2">${noticeBadges(app)}</td>
+            ${canEdit ? `<td class="px-2 py-2 text-right">${rowMenu(app)}</td>` : ''}
         </tr>`).join('');
-    return `
-        <div class="flex justify-between items-center mb-2">
-            <span class="text-sm font-bold text-gray-700">신청자 명단 (${apps.length}명 · 입금확인 ${apps.filter(a => a.paidAt).length}명)</span>
-            <div>
-                ${canDelete ? `<button type="button" data-action="send-pay-selected" data-idx="${idx}"
-                    class="px-3 py-1 mr-2 text-xs font-bold text-green-700 border border-green-300 rounded hover:bg-green-50">선택 입금안내</button>` : ''}
-                ${canDelete ? `<button type="button" data-action="send-course-notice" data-kind="class" data-idx="${idx}"
-                    class="px-3 py-1 mr-2 text-xs font-bold text-blue-700 border border-blue-300 rounded hover:bg-blue-50">교육안내 (전원)</button>` : ''}
-                ${canDelete ? `<button type="button" data-action="send-course-notice" data-kind="survey" data-idx="${idx}"
-                    class="px-3 py-1 mr-2 text-xs font-bold text-purple-700 border border-purple-300 rounded hover:bg-purple-50">선택 만족도조사</button>` : ''}
-                ${canDelete ? `<button type="button" data-action="send-course-notice" data-kind="cancel" data-idx="${idx}"
-                    class="px-3 py-1 mr-2 text-xs font-bold text-gray-700 border border-gray-400 rounded hover:bg-gray-100">폐강안내 (전원)</button>` : ''}
-                ${canDelete ? `<button type="button" data-action="delete-selected" data-idx="${idx}"
-                    class="px-3 py-1 mr-2 text-xs font-bold text-red-600 border border-red-300 rounded hover:bg-red-50">선택 삭제</button>` : ''}
-                <button type="button" data-action="download-csv" data-idx="${idx}"
-                    class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-bold">엑셀(CSV) 다운로드</button>
+    const btn = (attrs, cls, label) => `<button type="button" ${attrs} class="px-2.5 py-1 text-xs font-bold border rounded ${cls}">${label}</button>`;
+    const toolbar = canEdit ? `
+        <div class="flex flex-wrap justify-between items-center gap-2 mb-2">
+            <div class="flex flex-wrap items-center gap-1.5 px-2 py-1.5 bg-white border rounded-lg">
+                <span class="text-xs font-bold text-gray-700 mr-1">체크한 <span id="picked-count-${idx}" class="text-blue-700">0</span>명</span>
+                ${btn(`data-action="send-pay-selected" data-idx="${idx}"`, 'text-green-700 border-green-300 hover:bg-green-50', '입금안내')}
+                ${btn(`data-action="send-course-notice" data-kind="survey" data-idx="${idx}"`, 'text-purple-700 border-purple-300 hover:bg-purple-50', '만족도조사')}
+                ${btn(`data-action="delete-selected" data-idx="${idx}"`, 'text-red-600 border-red-300 hover:bg-red-50', '삭제')}
             </div>
-        </div>
-        <div class="overflow-x-auto bg-white border rounded-lg">
-            <table class="min-w-full whitespace-nowrap">
-                <thead class="bg-gray-50"><tr>${checkHead}<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">No</th>${head}</tr></thead>
+            <div class="flex flex-wrap items-center gap-1.5 px-2 py-1.5 bg-white border rounded-lg">
+                <span class="text-xs font-bold text-gray-700 mr-1">과정 전체</span>
+                ${btn(`data-action="send-course-notice" data-kind="class" data-idx="${idx}"`, 'text-blue-700 border-blue-300 hover:bg-blue-50', '교육안내')}
+                ${btn(`data-action="send-course-notice" data-kind="cancel" data-idx="${idx}"`, 'text-gray-700 border-gray-400 hover:bg-gray-100', '폐강안내')}
+                ${btn(`data-action="download-csv" data-idx="${idx}"`, 'bg-green-600 hover:bg-green-700 text-white border-green-600', '엑셀(CSV)')}
+            </div>
+        </div>` : `
+        <div class="flex justify-end mb-2">
+            <button type="button" data-action="download-csv" data-idx="${idx}" class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-bold">엑셀(CSV) 다운로드</button>
+        </div>`;
+    return `
+        <div class="text-sm font-bold text-gray-700 mb-2">신청자 명단 (${apps.length}명 · 입금확인 ${apps.filter(a => a.paidAt).length}명)</div>
+        ${toolbar}
+        <div class="bg-white border rounded-lg">
+            <table class="w-full">
+                <thead class="bg-gray-100"><tr>${head}</tr></thead>
                 <tbody>${rows}</tbody>
             </table>
-        </div>`;
+        </div>
+        <p class="mt-1 text-xs text-gray-400">신청일시·개인정보동의 등 전체 칸은 엑셀(CSV)에 있습니다. 안내 배지에 마우스를 올리면 보낸 시각이 보입니다.</p>`;
 }
+
+// 체크하면 그 줄을 색칠하고 '체크한 n명'을 바꾼다.
+function refreshPicked(idx) {
+    const boxes = [...document.querySelectorAll(`.app-check[data-course="${idx}"]`)];
+    boxes.forEach(c => { const tr = c.closest('tr'); if (tr) tr.classList.toggle('!bg-blue-100', c.checked); });
+    const counter = document.getElementById('picked-count-' + idx);
+    if (counter) counter.textContent = String(boxes.filter(c => c.checked).length);
+}
+document.addEventListener('change', e => {
+    const t = e.target;
+    if (t.classList && t.classList.contains('app-check')) refreshPicked(t.dataset.course);
+    else if (t.dataset && t.dataset.action === 'check-all') refreshPicked(t.dataset.idx);
+});
+// 열린 관리 메뉴(⋯)는 바깥을 누르면 닫는다.
+document.addEventListener('click', e => {
+    document.querySelectorAll('details[open]').forEach(d => { if (!d.contains(e.target)) d.removeAttribute('open'); });
+});
 
 // 펼친 과정은 새로고침(삭제·입금안내 후 목록 다시 불러오기) 뒤에도 펼친 채로 둔다.
 const openCourseIds = new Set();
@@ -1152,7 +1206,10 @@ const ACTIONS = {
 };
 document.addEventListener('click', e => {
     const el = e.target.closest('[data-action]');
-    if (el && ACTIONS[el.dataset.action]) ACTIONS[el.dataset.action](el);
+    if (!el || !ACTIONS[el.dataset.action]) return;
+    const menu = el.closest('details');
+    if (menu) menu.removeAttribute('open');
+    ACTIONS[el.dataset.action](el);
 });
 document.getElementById('login-form').addEventListener('submit', e => { e.preventDefault(); tryLogin(); });
 document.getElementById('mfa-panel').addEventListener('submit', e => { e.preventDefault(); verifyMfa(); });
