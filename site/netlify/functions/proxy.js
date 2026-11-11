@@ -602,6 +602,7 @@ exports.handler = async function(event, context) {
             payNoticeAt: app.pay_notice_sent_at ? formatTimestamp(app.pay_notice_sent_at) : "",
             cancelNoticeAt: app.cancel_notice_sent_at ? formatTimestamp(app.cancel_notice_sent_at) : "",
             classNoticeAt: app.class_notice_sent_at ? formatTimestamp(app.class_notice_sent_at) : "",
+            surveyNoticeAt: app.survey_notice_sent_at ? formatTimestamp(app.survey_notice_sent_at) : "",
             paidAt: app.paid_at ? formatTimestamp(app.paid_at) : "",
             memberType: "",
             feeStatus: "",
@@ -761,13 +762,20 @@ exports.handler = async function(event, context) {
       // 과정 신청자 전원에게 보내는 알림톡(슈퍼관리자만). 이미 보낸 신청은 force=1일 때만 다시 보낸다.
       // - send_cancel_notice: 교육 폐강 안내(sql/20, SOLAPI_CANCEL_TEMPLATE_ID) — 성명·휴대폰·과정명·교육일시
       // - send_class_notice: 교육 안내(전날, 일시·장소·주차) (sql/21, SOLAPI_CLASS_TEMPLATE_ID) — 성명·휴대폰·과정명·교육일시·장소.
-      //   폐강 안내를 받은 신청은 빼고 보낸다.
+      // - send_survey_notice: 교육 만족도 조사 안내(교육 끝날 때, 설문 링크는 템플릿 버튼에 고정) (sql/22, SOLAPI_SURVEY_TEMPLATE_ID) — 성명·휴대폰·과정명.
+      //   교육 안내·만족도 조사는 폐강 안내를 받은 신청을 빼고 보낸다.
       // 회사명·사업자번호·이메일·교육비는 보내지 않는다.
-      if (action === 'send_cancel_notice' || action === 'send_class_notice') {
+      const COURSE_NOTICE = {
+        send_cancel_notice: { env: 'SOLAPI_CANCEL_TEMPLATE_ID', col: 'cancel_notice_sent_at', label: '폐강 안내' },
+        send_class_notice: { env: 'SOLAPI_CLASS_TEMPLATE_ID', col: 'class_notice_sent_at', label: '교육 안내' },
+        send_survey_notice: { env: 'SOLAPI_SURVEY_TEMPLATE_ID', col: 'survey_notice_sent_at', label: '만족도 조사' }
+      };
+      if (Object.prototype.hasOwnProperty.call(COURSE_NOTICE, action)) {
+        const notice = COURSE_NOTICE[action];
         const isCancel = action === 'send_cancel_notice';
-        const templateId = isCancel ? process.env.SOLAPI_CANCEL_TEMPLATE_ID : process.env.SOLAPI_CLASS_TEMPLATE_ID;
-        const sentCol = isCancel ? 'cancel_notice_sent_at' : 'class_notice_sent_at';
-        const label = isCancel ? '폐강 안내' : '교육 안내';
+        const templateId = process.env[notice.env];
+        const sentCol = notice.col;
+        const label = notice.label;
         const courseId = str(reqBody.course_id);
         if (!UUID_RE.test(courseId)) return jsonRes(400, { result: 'error', msg: '잘못된 요청입니다.' });
         if (!solapiReady(templateId) || !adminDbClient) {
@@ -779,7 +787,7 @@ exports.handler = async function(event, context) {
         if (!courses || courses.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 과정을 찾을 수 없습니다.' });
         const c = courses[0];
         const { data: apps, error: appsError } = await dbClient.from('education_apply')
-          .select(isCancel ? 'id, name, phone, cancel_notice_sent_at' : 'id, name, phone, cancel_notice_sent_at, class_notice_sent_at')
+          .select(isCancel ? 'id, name, phone, cancel_notice_sent_at' : `id, name, phone, cancel_notice_sent_at, ${sentCol}`)
           .eq('course_id', courseId).limit(MAX_BULK_DELETE + 1);
         if (appsError) throw appsError;
         if (!apps || apps.length === 0) return jsonRes(400, { result: 'error', msg: '이 과정에는 신청자가 없습니다.' });
@@ -792,9 +800,11 @@ exports.handler = async function(event, context) {
           if (digits.length < 9 || digits.length > 11) { skipped.badPhone++; return false; }
           return true;
         });
-        const vars = a => isCancel
-          ? { '#{이름}': a.name || '', '#{과정명}': c.title || '', '#{교육일시}': c.date || '' }
-          : { '#{이름}': a.name || '', '#{과정명}': c.title || '', '#{교육일시}': c.date || '', '#{장소}': c.place || '대구상공회의소' };
+        const vars = a => {
+          if (action === 'send_survey_notice') return { '#{이름}': a.name || '', '#{과정명}': c.title || '' };
+          if (isCancel) return { '#{이름}': a.name || '', '#{과정명}': c.title || '', '#{교육일시}': c.date || '' };
+          return { '#{이름}': a.name || '', '#{과정명}': c.title || '', '#{교육일시}': c.date || '', '#{장소}': c.place || '대구상공회의소' };
+        };
         const results = await mapLimit(targets, 5, async a => ({
           id: a.id,
           r: await solapiSend(templateId, String(a.phone).replace(/\D/g, ''), vars(a))

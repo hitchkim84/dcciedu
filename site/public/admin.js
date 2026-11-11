@@ -496,7 +496,7 @@ function escapeHtml(value) {
 }
 
 const APPLICANT_COLUMNS = [
-    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['payNoticeAt', '입금안내'], ['paidText', '입금확인'], ['classNoticeAt', '교육안내'], ['cancelNoticeAt', '폐강안내'], ['dept', '부서'],
+    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['payNoticeAt', '입금안내'], ['paidText', '입금확인'], ['classNoticeAt', '교육안내'], ['surveyNoticeAt', '만족도조사'], ['cancelNoticeAt', '폐강안내'], ['dept', '부서'],
     ['position', '직위'], ['name', '성명'], ['phone', '연락처'], ['email', '이메일'], ['privacy', '개인정보동의']
 ];
 
@@ -553,12 +553,15 @@ function sendPayNotice(items, btn) {
 }
 
 // 과정 신청자 전원에게 보내는 알림톡(슈퍼관리자).
-// cancel: 교육 폐강 안내(sql/20) / class: 교육 안내(전날, 일시·장소·주차, sql/21, 폐강 안내 받은 사람은 서버에서 뺌)
+// cancel: 교육 폐강 안내(sql/20) / class: 교육 안내(전날, 일시·장소·주차, sql/21)
+// survey: 교육 만족도 조사 안내(교육 끝날 때, sql/22). class·survey는 폐강 안내 받은 사람을 서버에서도 뺀다.
 const COURSE_NOTICES = {
     cancel: { action: 'send_cancel_notice', label: '폐강 안내', key: 'cancelNoticeAt',
         warn: "홈페이지 신청 마감은 '교육 과정 관리'에서 신청 마감일을 지난 날짜로 바꿔 따로 해주세요." },
     class: { action: 'send_class_notice', label: '교육 안내', key: 'classNoticeAt',
-        warn: '교육 일시·장소와 주차 안내(맞은편 현대시티아울렛 무료 주차)가 나갑니다. 폐강 안내를 받은 신청자는 빠집니다.' }
+        warn: '교육 일시·장소와 주차 안내(맞은편 현대시티아울렛 무료 주차)가 나갑니다. 폐강 안내를 받은 신청자는 빠집니다.' },
+    survey: { action: 'send_survey_notice', label: '만족도 조사', key: 'surveyNoticeAt',
+        warn: '교육이 끝날 무렵 보내주세요(설문 링크는 알림톡 버튼에 들어 있습니다). 폐강 안내를 받은 신청자는 빠집니다.' }
 };
 function sendCourseNotice(btn) {
     const kind = COURSE_NOTICES[btn.dataset.kind];
@@ -684,6 +687,8 @@ function renderApplicantsTable(item, idx) {
                     class="px-3 py-1 mr-2 text-xs font-bold text-green-700 border border-green-300 rounded hover:bg-green-50">선택 입금안내</button>` : ''}
                 ${canDelete ? `<button type="button" data-action="send-course-notice" data-kind="class" data-idx="${idx}"
                     class="px-3 py-1 mr-2 text-xs font-bold text-blue-700 border border-blue-300 rounded hover:bg-blue-50">교육안내 (전원)</button>` : ''}
+                ${canDelete ? `<button type="button" data-action="send-course-notice" data-kind="survey" data-idx="${idx}"
+                    class="px-3 py-1 mr-2 text-xs font-bold text-purple-700 border border-purple-300 rounded hover:bg-purple-50">만족도조사 (전원)</button>` : ''}
                 ${canDelete ? `<button type="button" data-action="send-course-notice" data-kind="cancel" data-idx="${idx}"
                     class="px-3 py-1 mr-2 text-xs font-bold text-gray-700 border border-gray-400 rounded hover:bg-gray-100">폐강안내 (전원)</button>` : ''}
                 ${canDelete ? `<button type="button" data-action="delete-selected" data-idx="${idx}"
