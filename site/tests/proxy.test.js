@@ -1177,7 +1177,18 @@ test('survey notice: sends only name and course; skips cancelled and already-sen
   }
   assert.strictEqual(solapiRequests.length, 0);
   assert.strictEqual((await adminPost(handler, { action: 'send_survey_notice', course_id: 'x' })).statusCode, 400);
-  const res = await adminPost(handler, { action: 'send_survey_notice', course_id: COURSE_ID });
+  // 체크한 신청(ids)만: 없거나, 다른 과정 신청이 섞이면 거절
+  assert.strictEqual((await adminPost(handler, { action: 'send_survey_notice', course_id: COURSE_ID })).statusCode, 400);
+  const other = db.education_apply.find(a => a.course_id !== COURSE_ID);
+  if (other) assert.strictEqual((await adminPost(handler, { action: 'send_survey_notice', course_id: COURSE_ID, ids: [ids[2], other.id].join(',') })).statusCode, 400);
+  assert.strictEqual(solapiRequests.length, 0);
+  const courseIds = db.education_apply.filter(a => a.course_id === COURSE_ID).map(a => a.id);
+  const one = await adminPost(handler, { action: 'send_survey_notice', course_id: COURSE_ID, ids: ids[2] });
+  assert.strictEqual(one.json.sent, 1);
+  assert.strictEqual(solapiRequests.length, 1);
+  db.education_apply.find(a => a.id === ids[2]).survey_notice_sent_at = null;
+  solapiRequests = [];
+  const res = await adminPost(handler, { action: 'send_survey_notice', course_id: COURSE_ID, ids: courseIds.join(',') });
   assert.strictEqual(res.statusCode, 200);
   assert.deepStrictEqual([res.json.skipped.cancelled, res.json.skipped.already, res.json.sent], [1, 1, total - 2]);
   const msgs = solapiRequests.map(r => r.body.message);
@@ -1191,11 +1202,11 @@ test('survey notice: sends only name and course; skips cancelled and already-sen
   const listed = Object.values(list.json).flatMap(c => c.applicants || []);
   assert.ok(listed.some(a => a.surveyNoticeAt));
   solapiRequests = [];
-  const forced = await adminPost(handler, { action: 'send_survey_notice', course_id: COURSE_ID, force: '1' });
+  const forced = await adminPost(handler, { action: 'send_survey_notice', course_id: COURSE_ID, force: '1', ids: courseIds.join(',') });
   assert.strictEqual(forced.json.sent, total - 1);
   assert.ok(!solapiRequests.some(r => r.body.message.to === '01011112222'));
   const noTpl = loadHandler({ ...PAY_ENV, SOLAPI_SURVEY_TEMPLATE_ID: undefined });
-  assert.strictEqual((await adminPost(noTpl, { action: 'send_survey_notice', course_id: COURSE_ID })).statusCode, 503);
+  assert.strictEqual((await adminPost(noTpl, { action: 'send_survey_notice', course_id: COURSE_ID, ids: ids[2] })).statusCode, 503);
 });
 
 test('course supplies: saved, shown on the public list, and limited to 300 characters', async () => {

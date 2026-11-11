@@ -554,23 +554,32 @@ function sendPayNotice(items, btn) {
 
 // 과정 신청자 전원에게 보내는 알림톡(슈퍼관리자).
 // cancel: 교육 폐강 안내(sql/20) / class: 교육 안내(전날, 일시·장소·주차, sql/21)
-// survey: 교육 만족도 조사 안내(교육 끝날 때, sql/22). class·survey는 폐강 안내 받은 사람을 서버에서도 뺀다.
+// survey: 교육 만족도 조사 안내(교육 끝날 때, sql/22) — 불참자를 빼도록 체크한 신청자에게만.
+// class·survey는 폐강 안내 받은 사람을 서버에서도 뺀다.
 const COURSE_NOTICES = {
     cancel: { action: 'send_cancel_notice', label: '폐강 안내', key: 'cancelNoticeAt',
         warn: "홈페이지 신청 마감은 '교육 과정 관리'에서 신청 마감일을 지난 날짜로 바꿔 따로 해주세요." },
     class: { action: 'send_class_notice', label: '교육 안내', key: 'classNoticeAt',
         warn: '교육 일시·장소와 주차 안내(맞은편 현대시티아울렛 무료 주차)가 나갑니다. 폐강 안내를 받은 신청자는 빠집니다.' },
-    survey: { action: 'send_survey_notice', label: '만족도 조사', key: 'surveyNoticeAt',
+    survey: { action: 'send_survey_notice', label: '만족도 조사', key: 'surveyNoticeAt', selected: true,
         warn: '교육이 끝날 무렵 보내주세요(설문 링크는 알림톡 버튼에 들어 있습니다). 폐강 안내를 받은 신청자는 빠집니다.' }
 };
 function sendCourseNotice(btn) {
     const kind = COURSE_NOTICES[btn.dataset.kind];
     const item = statusCourses[Number(btn.dataset.idx)];
     if (!kind || !item) return;
-    const apps = (item.applicants || []).filter(a => btn.dataset.kind === 'cancel' || !a.cancelNoticeAt);
+    let apps = (item.applicants || []).filter(a => btn.dataset.kind === 'cancel' || !a.cancelNoticeAt);
+    let picked = null;
+    if (kind.selected) {
+        picked = [...document.querySelectorAll(`.app-check[data-course="${btn.dataset.idx}"]:checked`)].map(c => c.dataset.id);
+        if (picked.length === 0) return alert(`${kind.label}를 보낼 참석자를 체크해주세요.\n(맨 위 체크박스로 전체 선택 후 불참자만 해제하면 빠릅니다)`);
+        apps = apps.filter(a => picked.includes(a.id));
+        if (apps.length === 0) return alert('체크한 신청자는 모두 폐강 안내를 받아 보낼 수 없습니다.');
+    }
     if (apps.length === 0) return alert('보낼 신청자가 없습니다.');
     const sentBefore = apps.filter(a => a[kind.key]).length;
-    if (!confirm(`'${item.title}' 과정의 신청자 ${apps.length}명에게 ${kind.label} 알림톡을 보내시겠습니까?\n\n보낸 뒤에는 되돌릴 수 없습니다.\n${kind.warn}`)) return;
+    const who = picked ? `체크한 ${apps.length}명(${apps.map(a => a.name).join(', ')})` : `신청자 ${apps.length}명`;
+    if (!confirm(`'${item.title}' 과정의 ${who}에게 ${kind.label} 알림톡을 보내시겠습니까?\n\n보낸 뒤에는 되돌릴 수 없습니다.\n${kind.warn}`)) return;
     let force = '0';
     if (sentBefore) {
         if (sentBefore === apps.length) {
@@ -582,7 +591,7 @@ function sendCourseNotice(btn) {
     fetch(scriptURL + '?type=admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + sessionToken },
-        body: new URLSearchParams({ action: kind.action, course_id: item.id, force })
+        body: new URLSearchParams(picked ? { action: kind.action, course_id: item.id, force, ids: apps.map(a => a.id).join(',') } : { action: kind.action, course_id: item.id, force })
     })
         .then(r => r.json())
         .then(result => {
@@ -688,7 +697,7 @@ function renderApplicantsTable(item, idx) {
                 ${canDelete ? `<button type="button" data-action="send-course-notice" data-kind="class" data-idx="${idx}"
                     class="px-3 py-1 mr-2 text-xs font-bold text-blue-700 border border-blue-300 rounded hover:bg-blue-50">교육안내 (전원)</button>` : ''}
                 ${canDelete ? `<button type="button" data-action="send-course-notice" data-kind="survey" data-idx="${idx}"
-                    class="px-3 py-1 mr-2 text-xs font-bold text-purple-700 border border-purple-300 rounded hover:bg-purple-50">만족도조사 (전원)</button>` : ''}
+                    class="px-3 py-1 mr-2 text-xs font-bold text-purple-700 border border-purple-300 rounded hover:bg-purple-50">선택 만족도조사</button>` : ''}
                 ${canDelete ? `<button type="button" data-action="send-course-notice" data-kind="cancel" data-idx="${idx}"
                     class="px-3 py-1 mr-2 text-xs font-bold text-gray-700 border border-gray-400 rounded hover:bg-gray-100">폐강안내 (전원)</button>` : ''}
                 ${canDelete ? `<button type="button" data-action="delete-selected" data-idx="${idx}"
