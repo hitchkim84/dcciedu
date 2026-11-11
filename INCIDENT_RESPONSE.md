@@ -9,7 +9,7 @@
 |---|---|---|
 | 관리자 접속 기록 `SELECT * FROM admin_access_log ORDER BY created_at DESC LIMIT 100;` | 모르는 계정, 근무 시간 밖 접속, 내가 안 한 엑셀 다운로드(`log_csv`)·삭제·명단 교체 | 월 1회(예약 알림), 이상하면 즉시 |
 | 회사 구글·GitHub 계정 보안 메일 | 새 기기 로그인, 비밀번호·2단계 인증 변경 | 메일 올 때 |
-| Netlify 배포 알림 메일(Project configuration → Notifications → Deploy succeeded) | 내가 하지 않은 배포 | 메일 올 때 |
+| Netlify 배포 목록(Deploys) | 내가 하지 않은 배포(배포 알림 메일은 유료 기능이라 GitHub Watch·구글 로그인 알림으로 대신) | 월 1회 |
 | GitHub 저장소 Watch(All activity) | 내가 하지 않은 push·PR, `netlify-test` 변경 | 메일 올 때 |
 | Supabase → Authentication → Logs | 관리자 로그인 실패 반복, 모르는 위치 | 월 1회 |
 | 솔라피 잔액·발송 내역 | 갑자기 줄어든 잔액, 내가 안 보낸 발송(키 도용) | 월 1회. 자동충전 OFF 유지(피해 한도) |
