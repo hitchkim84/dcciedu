@@ -496,7 +496,7 @@ function escapeHtml(value) {
 }
 
 const APPLICANT_COLUMNS = [
-    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['payNoticeAt', '입금안내'], ['paidText', '입금확인'], ['classNoticeAt', '교육안내'], ['surveyNoticeAt', '만족도조사'], ['cancelNoticeAt', '폐강안내'], ['dept', '부서'],
+    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['payNoticeAt', '입금안내'], ['paidText', '입금확인'], ['attendedText', '출석'], ['classNoticeAt', '교육안내'], ['surveyNoticeAt', '만족도조사'], ['cancelNoticeAt', '폐강안내'], ['dept', '부서'],
     ['position', '직위'], ['name', '성명'], ['phone', '연락처'], ['email', '이메일'], ['privacy', '개인정보동의']
 ];
 
@@ -507,7 +507,8 @@ function sortedApplicants(item) {
         ...a,
         feeLabel: FEE_LABELS[a.feeType] || '미확인',
         feeText: a.appliedFee === '' || a.appliedFee === null || a.appliedFee === undefined ? '' : Number(a.appliedFee).toLocaleString('ko-KR') + '원',
-        paidText: a.paidAt ? '입금완료 ' + a.paidAt : ''
+        paidText: a.paidAt ? '입금완료 ' + a.paidAt : '',
+        attendedText: a.attendedAt ? '출석 ' + a.attendedAt : ''
     })).sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
 }
 
@@ -554,23 +555,34 @@ function sendPayNotice(items, btn) {
 
 // 과정 신청자 전원에게 보내는 알림톡(슈퍼관리자).
 // cancel: 교육 폐강 안내(sql/20) / class: 교육 안내(전날, 일시·장소·주차, sql/21)
-// survey: 교육 만족도 조사 안내(교육 끝날 때, sql/22). class·survey는 폐강 안내 받은 사람을 서버에서도 뺀다.
+// survey: 교육 만족도 조사 안내(교육 끝날 때, sql/22) — 불참자를 빼도록 체크한 신청자에게만.
+// class·survey는 폐강 안내 받은 사람을 서버에서도 뺀다.
 const COURSE_NOTICES = {
     cancel: { action: 'send_cancel_notice', label: '폐강 안내', key: 'cancelNoticeAt',
         warn: "홈페이지 신청 마감은 '교육 과정 관리'에서 신청 마감일을 지난 날짜로 바꿔 따로 해주세요." },
     class: { action: 'send_class_notice', label: '교육 안내', key: 'classNoticeAt',
         warn: '교육 일시·장소와 주차 안내(맞은편 현대시티아울렛 무료 주차)가 나갑니다. 폐강 안내를 받은 신청자는 빠집니다.' },
-    survey: { action: 'send_survey_notice', label: '만족도 조사', key: 'surveyNoticeAt',
+    survey: { action: 'send_survey_notice', label: '만족도 조사', key: 'surveyNoticeAt', selected: true,
         warn: '교육이 끝날 무렵 보내주세요(설문 링크는 알림톡 버튼에 들어 있습니다). 폐강 안내를 받은 신청자는 빠집니다.' }
 };
 function sendCourseNotice(btn) {
     const kind = COURSE_NOTICES[btn.dataset.kind];
     const item = statusCourses[Number(btn.dataset.idx)];
     if (!kind || !item) return;
-    const apps = (item.applicants || []).filter(a => btn.dataset.kind === 'cancel' || !a.cancelNoticeAt);
+    let apps = (item.applicants || []).filter(a => btn.dataset.kind === 'cancel' || !a.cancelNoticeAt);
+    let picked = null;
+    let pickedBy = '체크한';
+    if (kind.selected) {
+        picked = [...document.querySelectorAll(`.app-check[data-course="${btn.dataset.idx}"]:checked`)].map(c => c.dataset.id);
+        if (picked.length === 0) { picked = apps.filter(a => a.attendedAt).map(a => a.id); pickedBy = '출석한'; }
+        if (picked.length === 0) return alert(`${kind.label}를 보낼 사람이 없습니다.\n'출석' 칸을 체크하거나, 보낼 사람을 왼쪽 체크박스로 골라주세요.`);
+        apps = apps.filter(a => picked.includes(a.id));
+        if (apps.length === 0) return alert('체크한 신청자는 모두 폐강 안내를 받아 보낼 수 없습니다.');
+    }
     if (apps.length === 0) return alert('보낼 신청자가 없습니다.');
     const sentBefore = apps.filter(a => a[kind.key]).length;
-    if (!confirm(`'${item.title}' 과정의 신청자 ${apps.length}명에게 ${kind.label} 알림톡을 보내시겠습니까?\n\n보낸 뒤에는 되돌릴 수 없습니다.\n${kind.warn}`)) return;
+    const who = picked ? `${pickedBy} ${apps.length}명(${apps.map(a => a.name).join(', ')})` : `신청자 ${apps.length}명`;
+    if (!confirm(`'${item.title}' 과정의 ${who}에게 ${kind.label} 알림톡을 보내시겠습니까?\n\n보낸 뒤에는 되돌릴 수 없습니다.\n${kind.warn}`)) return;
     let force = '0';
     if (sentBefore) {
         if (sentBefore === apps.length) {
@@ -582,7 +594,7 @@ function sendCourseNotice(btn) {
     fetch(scriptURL + '?type=admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + sessionToken },
-        body: new URLSearchParams({ action: kind.action, course_id: item.id, force })
+        body: new URLSearchParams(picked ? { action: kind.action, course_id: item.id, force, ids: apps.map(a => a.id).join(',') } : { action: kind.action, course_id: item.id, force })
     })
         .then(r => r.json())
         .then(result => {
@@ -623,6 +635,30 @@ function setFeeType(btn) {
         .catch(err => { alert('오류 발생: ' + err); btn.disabled = false; });
 }
 
+// 교육 출석 체크/해제(슈퍼관리자). 체크한 시각이 남는다(sql/23). 당일 여러 명을 빨리 체크하도록 확인 창 없이 바로 저장한다.
+function setAttended(box) {
+    const on = box.checked;
+    box.disabled = true;
+    fetch(scriptURL + '?type=admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + sessionToken },
+        body: new URLSearchParams({ action: 'set_attended', id: box.dataset.id, attended: on ? '1' : '0' })
+    })
+        .then(r => r.json())
+        .then(result => {
+            if (result.result !== 'success') throw new Error(result.msg);
+            box.disabled = false;
+            const label = box.parentElement.querySelector('span');
+            if (label) { label.textContent = on ? '출석' : '-'; label.className = on ? 'text-blue-700 font-bold' : 'text-gray-400'; }
+            const item = statusCourses[Number(box.dataset.idx)];
+            const app = item && (item.applicants || []).find(a => a.id === box.dataset.id);
+            if (app) app.attendedAt = on ? result.attendedAt : '';
+            const counter = document.getElementById('attended-count-' + box.dataset.idx);
+            if (counter && item) counter.textContent = String((item.applicants || []).filter(a => a.attendedAt).length);
+        })
+        .catch(err => { alert('⛔ 출석 저장 실패: ' + err.message); box.checked = !on; box.disabled = false; });
+}
+
 // 교육비 입금 확인 체크/해제(슈퍼관리자). 체크한 시각이 남는다(sql/18).
 function setPaid(box) {
     const paid = box.checked;
@@ -655,55 +691,112 @@ function applicantCell(app, key, canEdit) {
     return escapeHtml(app[key]);
 }
 
+// 안내 알림톡 발송 현황을 작은 배지로(날짜는 마우스를 올리면 보인다)
+const NOTICE_BADGES = [
+    ['payNoticeAt', '입금안내', 'bg-green-50 text-green-700 border-green-200'],
+    ['classNoticeAt', '교육안내', 'bg-blue-50 text-blue-700 border-blue-200'],
+    ['surveyNoticeAt', '만족도', 'bg-purple-50 text-purple-700 border-purple-200'],
+    ['cancelNoticeAt', '폐강', 'bg-gray-100 text-gray-700 border-gray-300']
+];
+function noticeBadges(app) {
+    const html = NOTICE_BADGES.filter(([key]) => app[key]).map(([key, label, cls]) =>
+        `<span class="inline-block px-1.5 py-0.5 mr-1 mb-1 text-xs border rounded ${cls}" title="${escapeHtml(label + ' ' + app[key])}">${label}✓</span>`).join('');
+    return html || '<span class="text-xs text-gray-300">-</span>';
+}
+
+// 신청 1건 관리 메뉴(입금안내·회원 구분 바꾸기·삭제). 성명 바로 옆 칸에 두어 다른 줄과 헷갈리지 않게 한다.
+function rowMenu(app) {
+    const data = `data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"`;
+    return `<details class="relative">
+        <summary class="list-none cursor-pointer px-2 py-1 text-sm font-bold text-gray-600 border rounded hover:bg-gray-100 select-none" title="${escapeHtml(app.name)} 관리">⋯</summary>
+        <div class="absolute right-0 z-20 mt-1 w-36 bg-white border rounded shadow-lg py-1 text-left">
+            <div class="px-3 py-1 text-xs text-gray-500 border-b truncate">${escapeHtml(app.name)} · ${escapeHtml(app.bizName)}</div>
+            <button type="button" ${data} data-fee="${escapeHtml(app.feeText)}" data-label="${escapeHtml(app.feeLabel)}" data-sent="${escapeHtml(app.payNoticeAt)}"
+                data-action="send-pay-notice" class="block w-full text-left px-3 py-1.5 text-sm text-green-700 hover:bg-green-50">입금안내 보내기</button>
+            <button type="button" ${data} data-next="${app.feeType === 'member' ? 'nonmember' : 'member'}" data-action="set-fee-type"
+                class="block w-full text-left px-3 py-1.5 text-sm text-blue-700 hover:bg-blue-50">${app.feeType === 'member' ? '비회원사로 변경' : '회원사로 변경'}</button>
+            <button type="button" ${data} data-action="delete-application"
+                class="block w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 border-t">신청 삭제</button>
+        </div>
+    </details>`;
+}
+
+// 신청자 명단. 좌우 스크롤 없이 한 화면에 보이도록 칸을 합쳤다(전체 칸은 엑셀 다운로드에 그대로 있다).
 function renderApplicantsTable(item, idx) {
     const apps = sortedApplicants(item);
     if (apps.length === 0) {
         return '<p class="text-sm text-gray-500 py-2">신청자가 없습니다.</p>';
     }
-    // 삭제(개별·선택 삭제)는 슈퍼관리자에게만 보인다.
-    const canDelete = isSuperAdmin();
-    const checkHead = canDelete
-        ? `<th class="px-3 py-2"><input type="checkbox" data-action="check-all" data-idx="${idx}" aria-label="전체 선택"></th>` : '';
-    const head = APPLICANT_COLUMNS.map(([, label]) =>
-        `<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">${label}</th>`).join('')
-        + (canDelete ? '<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">관리</th>' : '');
+    // 체크·발송·삭제는 슈퍼관리자에게만 보인다.
+    const canEdit = isSuperAdmin();
+    const th = (label, cls = '') => `<th class="px-2 py-2 text-left text-xs font-bold text-gray-500 ${cls}">${label}</th>`;
+    const head = (canEdit ? `<th class="px-2 py-2 w-8"><input type="checkbox" data-action="check-all" data-idx="${idx}" aria-label="전체 선택"></th>` : '')
+        + th('No', 'w-8') + th('성명') + th('회사') + th('연락처') + th('교육비') + th('입금확인') + th('출석') + th('안내') + (canEdit ? th('', 'w-12') : '');
     const rows = apps.map((app, i) => `
-        <tr class="border-t">
-            ${canDelete ? `<td class="px-3 py-2"><input type="checkbox" class="app-check" data-course="${idx}" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}" data-fee="${escapeHtml(app.feeText)}" data-label="${escapeHtml(app.feeLabel)}" data-sent="${escapeHtml(app.payNoticeAt)}" aria-label="선택"></td>` : ''}
-            <td class="px-3 py-2 text-xs text-gray-500">${i + 1}</td>
-            ${APPLICANT_COLUMNS.map(([key]) => `<td class="px-3 py-2 text-sm text-gray-800">${applicantCell(app, key, canDelete)}</td>`).join('')}
-            ${canDelete ? `<td class="px-3 py-2"><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
-                data-fee="${escapeHtml(app.feeText)}" data-label="${escapeHtml(app.feeLabel)}" data-sent="${escapeHtml(app.payNoticeAt)}" data-action="send-pay-notice"
-                class="px-2 py-1 mr-1 text-xs font-bold text-green-700 border border-green-300 rounded hover:bg-green-50">입금안내</button><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
-                data-next="${app.feeType === 'member' ? 'nonmember' : 'member'}" data-action="set-fee-type"
-                class="px-2 py-1 mr-1 text-xs font-bold text-blue-700 border border-blue-300 rounded hover:bg-blue-50">${app.feeType === 'member' ? '비회원사로' : '회원사로'}</button><button type="button" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"
-                data-action="delete-application" class="px-2 py-1 text-xs font-bold text-red-600 border border-red-300 rounded hover:bg-red-50">삭제</button></td>` : ''}
+        <tr class="border-t align-top odd:bg-white even:bg-gray-50 hover:bg-yellow-50" data-row="${escapeHtml(app.id)}">
+            ${canEdit ? `<td class="px-2 py-2"><input type="checkbox" class="app-check" data-course="${idx}" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}" data-fee="${escapeHtml(app.feeText)}" data-label="${escapeHtml(app.feeLabel)}" data-sent="${escapeHtml(app.payNoticeAt)}" aria-label="${escapeHtml(app.name)} 선택"></td>` : ''}
+            <td class="px-2 py-2 text-xs text-gray-400">${i + 1}</td>
+            <td class="px-2 py-2"><div class="text-sm font-bold text-gray-900">${escapeHtml(app.name)}</div><div class="text-xs text-gray-500">${escapeHtml([app.position, app.dept].filter(Boolean).join(' · '))}</div></td>
+            <td class="px-2 py-2"><div class="text-sm text-gray-800">${escapeHtml(app.bizName)}</div><div class="text-xs text-gray-500">${escapeHtml(app.bizNo)}</div></td>
+            <td class="px-2 py-2"><div class="text-sm text-gray-800">${escapeHtml(app.phone)}</div><div class="text-xs text-gray-500 break-all">${escapeHtml(app.email)}</div></td>
+            <td class="px-2 py-2"><div class="text-sm text-gray-800">${escapeHtml(app.feeText)}</div><div class="text-xs ${app.feeType === 'member' ? 'text-blue-600' : 'text-gray-500'}">${escapeHtml(app.feeLabel)}</div></td>
+            <td class="px-2 py-2 text-sm">${canEdit ? `<label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" data-action="set-paid"
+                data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"${app.paidAt ? ' checked' : ''}
+                aria-label="${escapeHtml(app.name)} 입금확인"><span class="${app.paidAt ? 'text-green-700 font-bold' : 'text-gray-400'}">${app.paidAt ? '완료' : '미입금'}</span></label>`
+                : `<span class="${app.paidAt ? 'text-green-700 font-bold' : 'text-gray-400'}">${app.paidAt ? '완료' : '미입금'}</span>`}${app.paidAt ? `<div class="text-xs text-gray-400">${escapeHtml(String(app.paidAt).slice(0, 13))}</div>` : ''}</td>
+            <td class="px-2 py-2 text-sm">${canEdit ? `<label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" data-action="set-attended" data-idx="${idx}"
+                data-id="${escapeHtml(app.id)}"${app.attendedAt ? ' checked' : ''} aria-label="${escapeHtml(app.name)} 출석"><span class="${app.attendedAt ? 'text-blue-700 font-bold' : 'text-gray-400'}">${app.attendedAt ? '출석' : '-'}</span></label>`
+                : `<span class="${app.attendedAt ? 'text-blue-700 font-bold' : 'text-gray-400'}">${app.attendedAt ? '출석' : '-'}</span>`}</td>
+            <td class="px-2 py-2">${noticeBadges(app)}</td>
+            ${canEdit ? `<td class="px-2 py-2 text-right">${rowMenu(app)}</td>` : ''}
         </tr>`).join('');
-    return `
-        <div class="flex justify-between items-center mb-2">
-            <span class="text-sm font-bold text-gray-700">신청자 명단 (${apps.length}명 · 입금확인 ${apps.filter(a => a.paidAt).length}명)</span>
-            <div>
-                ${canDelete ? `<button type="button" data-action="send-pay-selected" data-idx="${idx}"
-                    class="px-3 py-1 mr-2 text-xs font-bold text-green-700 border border-green-300 rounded hover:bg-green-50">선택 입금안내</button>` : ''}
-                ${canDelete ? `<button type="button" data-action="send-course-notice" data-kind="class" data-idx="${idx}"
-                    class="px-3 py-1 mr-2 text-xs font-bold text-blue-700 border border-blue-300 rounded hover:bg-blue-50">교육안내 (전원)</button>` : ''}
-                ${canDelete ? `<button type="button" data-action="send-course-notice" data-kind="survey" data-idx="${idx}"
-                    class="px-3 py-1 mr-2 text-xs font-bold text-purple-700 border border-purple-300 rounded hover:bg-purple-50">만족도조사 (전원)</button>` : ''}
-                ${canDelete ? `<button type="button" data-action="send-course-notice" data-kind="cancel" data-idx="${idx}"
-                    class="px-3 py-1 mr-2 text-xs font-bold text-gray-700 border border-gray-400 rounded hover:bg-gray-100">폐강안내 (전원)</button>` : ''}
-                ${canDelete ? `<button type="button" data-action="delete-selected" data-idx="${idx}"
-                    class="px-3 py-1 mr-2 text-xs font-bold text-red-600 border border-red-300 rounded hover:bg-red-50">선택 삭제</button>` : ''}
-                <button type="button" data-action="download-csv" data-idx="${idx}"
-                    class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-bold">엑셀(CSV) 다운로드</button>
+    const btn = (attrs, cls, label) => `<button type="button" ${attrs} class="px-2.5 py-1 text-xs font-bold border rounded ${cls}">${label}</button>`;
+    const toolbar = canEdit ? `
+        <div class="flex flex-wrap justify-between items-center gap-2 mb-2">
+            <div class="flex flex-wrap items-center gap-1.5 px-2 py-1.5 bg-white border rounded-lg">
+                <span class="text-xs font-bold text-gray-700 mr-1">체크한 <span id="picked-count-${idx}" class="text-blue-700">0</span>명</span>
+                ${btn(`data-action="send-pay-selected" data-idx="${idx}"`, 'text-green-700 border-green-300 hover:bg-green-50', '입금안내')}
+                ${btn(`data-action="send-course-notice" data-kind="survey" data-idx="${idx}"`, 'text-purple-700 border-purple-300 hover:bg-purple-50', '만족도조사')}
+                ${btn(`data-action="delete-selected" data-idx="${idx}"`, 'text-red-600 border-red-300 hover:bg-red-50', '삭제')}
             </div>
-        </div>
-        <div class="overflow-x-auto bg-white border rounded-lg">
-            <table class="min-w-full whitespace-nowrap">
-                <thead class="bg-gray-50"><tr>${checkHead}<th class="px-3 py-2 text-left text-xs font-bold text-gray-500">No</th>${head}</tr></thead>
+            <div class="flex flex-wrap items-center gap-1.5 px-2 py-1.5 bg-white border rounded-lg">
+                <span class="text-xs font-bold text-gray-700 mr-1">과정 전체</span>
+                ${btn(`data-action="send-course-notice" data-kind="class" data-idx="${idx}"`, 'text-blue-700 border-blue-300 hover:bg-blue-50', '교육안내')}
+                ${btn(`data-action="send-course-notice" data-kind="cancel" data-idx="${idx}"`, 'text-gray-700 border-gray-400 hover:bg-gray-100', '폐강안내')}
+                ${btn(`data-action="download-csv" data-idx="${idx}"`, 'bg-green-600 hover:bg-green-700 text-white border-green-600', '엑셀(CSV)')}
+            </div>
+        </div>` : `
+        <div class="flex justify-end mb-2">
+            <button type="button" data-action="download-csv" data-idx="${idx}" class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-bold">엑셀(CSV) 다운로드</button>
+        </div>`;
+    return `
+        <div class="text-sm font-bold text-gray-700 mb-2">신청자 명단 (${apps.length}명 · 입금확인 ${apps.filter(a => a.paidAt).length}명 · 출석 <span id="attended-count-${idx}">${apps.filter(a => a.attendedAt).length}</span>명)</div>
+        ${toolbar}
+        <div class="bg-white border rounded-lg">
+            <table class="w-full">
+                <thead class="bg-gray-100"><tr>${head}</tr></thead>
                 <tbody>${rows}</tbody>
             </table>
-        </div>`;
+        </div>
+        <p class="mt-1 text-xs text-gray-400">신청일시·개인정보동의 등 전체 칸은 엑셀(CSV)에 있습니다. 안내 배지에 마우스를 올리면 보낸 시각이 보입니다.</p>`;
 }
+
+// 체크하면 그 줄을 색칠하고 '체크한 n명'을 바꾼다.
+function refreshPicked(idx) {
+    const boxes = [...document.querySelectorAll(`.app-check[data-course="${idx}"]`)];
+    boxes.forEach(c => { const tr = c.closest('tr'); if (tr) tr.classList.toggle('!bg-blue-100', c.checked); });
+    const counter = document.getElementById('picked-count-' + idx);
+    if (counter) counter.textContent = String(boxes.filter(c => c.checked).length);
+}
+document.addEventListener('change', e => {
+    const t = e.target;
+    if (t.classList && t.classList.contains('app-check')) refreshPicked(t.dataset.course);
+    else if (t.dataset && t.dataset.action === 'check-all') refreshPicked(t.dataset.idx);
+});
+// 열린 관리 메뉴(⋯)는 바깥을 누르면 닫는다.
+document.addEventListener('click', e => {
+    document.querySelectorAll('details[open]').forEach(d => { if (!d.contains(e.target)) d.removeAttribute('open'); });
+});
 
 // 펼친 과정은 새로고침(삭제·입금안내 후 목록 다시 불러오기) 뒤에도 펼친 채로 둔다.
 const openCourseIds = new Set();
@@ -1133,6 +1226,7 @@ const ACTIONS = {
     'delete-course': el => deleteCourse(el.dataset.id),
     'set-fee-type': el => setFeeType(el),
     'set-paid': el => setPaid(el),
+    'set-attended': el => setAttended(el),
     'send-course-notice': el => sendCourseNotice(el),
     'send-pay-notice': el => sendPayNotice([payItem(el)], el),
     'send-pay-selected': el => sendPayNotice([...document.querySelectorAll(`.app-check[data-course="${el.dataset.idx}"]:checked`)].map(payItem), el),
@@ -1143,7 +1237,10 @@ const ACTIONS = {
 };
 document.addEventListener('click', e => {
     const el = e.target.closest('[data-action]');
-    if (el && ACTIONS[el.dataset.action]) ACTIONS[el.dataset.action](el);
+    if (!el || !ACTIONS[el.dataset.action]) return;
+    const menu = el.closest('details');
+    if (menu) menu.removeAttribute('open');
+    ACTIONS[el.dataset.action](el);
 });
 document.getElementById('login-form').addEventListener('submit', e => { e.preventDefault(); tryLogin(); });
 document.getElementById('mfa-panel').addEventListener('submit', e => { e.preventDefault(); verifyMfa(); });
