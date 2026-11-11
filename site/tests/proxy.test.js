@@ -246,7 +246,7 @@ function loadHandler(env) {
   for (const k of ['SUPABASE_URL', 'SUPABASE_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GOOGLE_SCRIPT_URL', 'APPS_SCRIPT_SECRET',
     'TURNSTILE_SECRET', 'TURNSTILE_DISABLED', 'TURNSTILE_HOSTNAMES',
     'SOLAPI_API_KEY', 'SOLAPI_API_SECRET', 'SOLAPI_PFID', 'SOLAPI_TEMPLATE_ID', 'SOLAPI_SENDER',
-    'SOLAPI_PAY_TEMPLATE_ID', 'PAYMENT_ACCOUNT', 'SOLAPI_CANCEL_TEMPLATE_ID', 'SOLAPI_CLASS_TEMPLATE_ID']) delete process.env[k];
+    'SOLAPI_PAY_TEMPLATE_ID', 'PAYMENT_ACCOUNT', 'SOLAPI_CANCEL_TEMPLATE_ID', 'SOLAPI_CLASS_TEMPLATE_ID', 'SOLAPI_SURVEY_TEMPLATE_ID']) delete process.env[k];
   // 운영과 같이 로봇 확인 키가 있는 상태가 기본. env에 undefined를 주면 그 값은 없는 상태로 테스트한다.
   const merged = { SUPABASE_URL: 'https://example.supabase.co', SUPABASE_KEY: 'anon', TURNSTILE_SECRET: 'ts-secret', ...env };
   for (const [k, v] of Object.entries(merged)) if (v !== undefined) process.env[k] = v;
@@ -1163,6 +1163,39 @@ test('class notice: sends name, course, date and place; skips cancelled and alre
   assert.ok(db.admin_access_log.some(l => l.action === 'send_class_notice'));
   const noTpl = loadHandler({ ...PAY_ENV, SOLAPI_CLASS_TEMPLATE_ID: undefined });
   assert.strictEqual((await adminPost(noTpl, { action: 'send_class_notice', course_id: COURSE_ID })).statusCode, 503);
+});
+
+// 만족도 조사 안내(sql/22): 이름·과정명만, 폐강 안내 받은 신청은 빼고, 슈퍼관리자만
+test('survey notice: sends only name and course; skips cancelled and already-sent applicants; super admin only', async () => {
+  const handler = loadHandler({ ...PAY_ENV, SOLAPI_SURVEY_TEMPLATE_ID: 'TPL_SURVEY' });
+  const ids = payApps();
+  db.education_apply.find(a => a.id === ids[0]).cancel_notice_sent_at = '2026-11-04T00:00:00Z';
+  db.education_apply.find(a => a.id === ids[1]).survey_notice_sent_at = '2026-11-12T03:00:00Z';
+  const total = db.education_apply.filter(a => a.course_id === COURSE_ID).length;
+  for (const token of [STAFF_TOKEN, ADMIN_AAL1_TOKEN]) {
+    assert.strictEqual((await adminPost(handler, { action: 'send_survey_notice', course_id: COURSE_ID }, token)).statusCode, 403);
+  }
+  assert.strictEqual(solapiRequests.length, 0);
+  assert.strictEqual((await adminPost(handler, { action: 'send_survey_notice', course_id: 'x' })).statusCode, 400);
+  const res = await adminPost(handler, { action: 'send_survey_notice', course_id: COURSE_ID });
+  assert.strictEqual(res.statusCode, 200);
+  assert.deepStrictEqual([res.json.skipped.cancelled, res.json.skipped.already, res.json.sent], [1, 1, total - 2]);
+  const msgs = solapiRequests.map(r => r.body.message);
+  assert.ok(msgs.every(m => m.kakaoOptions.templateId === 'TPL_SURVEY'));
+  assert.ok(!msgs.some(m => m.to === '01011112222'));
+  assert.deepStrictEqual(msgs.find(m => m.to === '01055556666').kakaoOptions.variables, { '#{이름}': '미확인', '#{과정명}': '세무회계 실무' });
+  assert.ok(db.education_apply.find(a => a.id === ids[2]).survey_notice_sent_at);
+  assert.ok(!db.education_apply.find(a => a.id === ids[0]).survey_notice_sent_at);
+  assert.ok(db.admin_access_log.some(l => l.action === 'send_survey_notice'));
+  const list = await call(handler, { type: 'admin', token: ADMIN_TOKEN });
+  const listed = Object.values(list.json).flatMap(c => c.applicants || []);
+  assert.ok(listed.some(a => a.surveyNoticeAt));
+  solapiRequests = [];
+  const forced = await adminPost(handler, { action: 'send_survey_notice', course_id: COURSE_ID, force: '1' });
+  assert.strictEqual(forced.json.sent, total - 1);
+  assert.ok(!solapiRequests.some(r => r.body.message.to === '01011112222'));
+  const noTpl = loadHandler({ ...PAY_ENV, SOLAPI_SURVEY_TEMPLATE_ID: undefined });
+  assert.strictEqual((await adminPost(noTpl, { action: 'send_survey_notice', course_id: COURSE_ID })).statusCode, 503);
 });
 
 test('course supplies: saved, shown on the public list, and limited to 300 characters', async () => {

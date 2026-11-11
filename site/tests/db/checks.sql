@@ -258,5 +258,13 @@ BEGIN
   r := pg_temp.as_role('authenticated', aal2, $q$WITH x AS (UPDATE public.courses SET supplies = '노트북' WHERE id = '11111111-1111-1111-1111-111111111111' RETURNING 1) SELECT count(*) FROM x$q$);
   IF r <> 'rows=1' THEN RAISE EXCEPTION '슈퍼관리자 준비물 수정: %', r; END IF;
   RAISE NOTICE '교육 안내 기록·준비물: 서버 키·슈퍼관리자(OTP)만, 일반관리자는 0건';
+  -- 만족도 조사 안내 발송 시각(sql/22): 일반관리자·OTP 전 슈퍼관리자는 바꿀 수 없음
+  r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.education_apply SET survey_notice_sent_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
+  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 만족도조사 기록: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal1, $q$WITH x AS (UPDATE public.education_apply SET survey_notice_sent_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
+  IF r <> 'rows=0' THEN RAISE EXCEPTION '슈퍼관리자 aal1 만족도조사 기록: %', r; END IF;
+  r := pg_temp.as_role('service_role', '{}', $q$WITH x AS (UPDATE public.education_apply SET survey_notice_sent_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
+  IF r <> 'rows=1' THEN RAISE EXCEPTION '서버 키 만족도조사 기록: %', r; END IF;
+  RAISE NOTICE '만족도 조사 기록: 서버 키만 기록, 일반관리자·OTP 전 슈퍼관리자는 0건';
   RAISE NOTICE '교육비 판별: 사업자번호 없으면 거절, 명단에 있으면 회원사 44,000원·없으면 비회원사 88,000원, 구분 변경은 슈퍼관리자만';
 END $$;
