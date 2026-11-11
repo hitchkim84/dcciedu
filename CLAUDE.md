@@ -30,6 +30,7 @@
 - 관리자 로그인 정보는 기본으로 브라우저 탭 안(sessionStorage)에만 두고, 30분 동안 조작이 없으면 자동 로그아웃한다. 슈퍼관리자가 OTP 화면에서 "이 PC 기억"을 체크하면 30일 동안 그 브라우저(localStorage)에 두어 OTP를 다시 묻지 않고, 자리 비움 로그아웃은 4시간으로 한다(2026-10 결정: OTP 입력 부담). 회사 PC에서만 체크하고, 로그아웃하거나 30일이 지나면 기억을 지우고 서버 세션도 끊는다.
 - `SUPABASE_SERVICE_ROLE_KEY`·`TURNSTILE_SECRET`은 Netlify에서 Production 배포에만 쓰이게 한다(Deploy Preview 제외). 공개 저장소라 외부인의 PR 미리보기가 비밀값을 읽을 수 있기 때문.
 - API CORS는 `https://dcciedu.co.kr`만 허용한다.
+- 개인정보 사고(유출·불법 접근 의심)는 `INCIDENT_RESPONSE.md` 순서대로 한다: 막기(1시간) → 범위 확인 → 회사 보고·신청자 통지·기관 신고(알게 된 때부터 72시간).
 
 ## 2. 홈페이지 안정성
 - 운영 배포 브랜치는 `netlify-test`다. 여기에 머지하면 바로 실제 사이트에 배포된다.
