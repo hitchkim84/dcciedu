@@ -100,6 +100,10 @@ run_sql sql/22_survey_notice.sql
 run_sql sql/22_survey_notice.sql
 run_sql sql/23_attendance.sql
 run_sql sql/23_attendance.sql
+run_sql sql/24_audited_admin_read.sql
+run_sql sql/24_audited_admin_read.sql
+run_sql sql/25_restrict_direct_read.sql
+run_sql sql/25_restrict_direct_read.sql
 
 echo "[적용 후] check_security.sql 판정 (종료일 미입력만 남아야 함)"
 check_report

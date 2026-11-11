@@ -2,8 +2,21 @@ const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY; // anon key
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY; // optional, server only
+
+// 공개 키(SUPABASE_KEY) 자리에 실수로 서비스 키를 넣으면 브라우저(/api/config)로 나가고 DB 규칙이 모두 무시된다.
+// 그런 값이면 쓰지 않는다(서버도 멈춤 → 설정 오류가 바로 드러나게).
+function isServiceKey(key) {
+  const k = String(key || '');
+  if (k.startsWith('sb_secret_')) return true;
+  try {
+    return JSON.parse(Buffer.from(k.split('.')[1] || '', 'base64url').toString('utf8')).role === 'service_role';
+  } catch (e) {
+    return false;
+  }
+}
+const supabaseKey = isServiceKey(process.env.SUPABASE_KEY) ? null : process.env.SUPABASE_KEY; // anon key
+if (process.env.SUPABASE_KEY && !supabaseKey) console.error('SUPABASE_KEY looks like a service key: refusing to use it (set the anon/publishable key)');
 
 // Initialize Supabase clients safely
 let supabase = null;
@@ -485,7 +498,7 @@ function courseFields(reqBody) {
 // 관리자 등급: admin = 슈퍼관리자(모든 기능, OTP 필수), staff = 일반관리자(명단 보기·엑셀 다운로드만, OTP 없음)
 // DB 규칙(sql/14)도 같은 기준으로 한 번 더 막는다.
 const ADMIN_ROLES = ['admin', 'staff'];
-const STAFF_ACTIONS = ['log_csv'];
+const STAFF_ACTIONS = ['download_csv'];
 const MAX_BULK_DELETE = 100;
 const MAX_MEMBER_LIST = 50000; // 회원사 명단 한 번에 올릴 수 있는 최대 개수
 
@@ -510,6 +523,69 @@ async function logAccess(user, role, action, detail) {
 }
 
 const COURSE_HAS_APPLICANTS_MSG = '신청자가 있는 과정은 삭제할 수 없습니다. 신청자 명단을 먼저 정리해주세요.';
+
+// 신청자 개인정보는 DB 함수 admin_read_applications(sql/24)로만 읽는다.
+// 함수 안에서 등급·OTP를 확인하고, 조회와 접속 기록 저장을 한 번에 처리한다(기록 실패 시 명단도 돌려주지 않음).
+const READ_BLOCKED_MSG = '접속 기록을 남기지 못해 신청자 명단을 표시하지 않았습니다. 잠시 후 다시 시도해주세요.';
+async function readApplications(client, action, { courseId = null, ids = null } = {}) {
+  const { data, error } = await client.rpc('admin_read_applications', { p_action: action, p_course_id: courseId, p_ids: ids });
+  if (error) {
+    console.error('admin_read_applications failed:', errInfo(error));
+    return { rows: null, forbidden: error.code === '42501' };
+  }
+  return { rows: data || [] };
+}
+
+function applicantView(app) {
+  return {
+    id: app.id,
+    timestamp: formatTimestamp(app.created_at),
+    bizName: app.company || "",
+    bizNo: app.biz_no || "",
+    dept: app.dept || "",
+    position: app.position || "",
+    name: app.name || "",
+    phone: app.phone || "",
+    email: app.email || "",
+    privacy: app.agree_privacy ? "Y" : "N",
+    feeType: app.fee_type || "",
+    appliedFee: app.applied_fee ?? "",
+    payNoticeAt: app.pay_notice_sent_at ? formatTimestamp(app.pay_notice_sent_at) : "",
+    cancelNoticeAt: app.cancel_notice_sent_at ? formatTimestamp(app.cancel_notice_sent_at) : "",
+    classNoticeAt: app.class_notice_sent_at ? formatTimestamp(app.class_notice_sent_at) : "",
+    surveyNoticeAt: app.survey_notice_sent_at ? formatTimestamp(app.survey_notice_sent_at) : "",
+    paidAt: app.paid_at ? formatTimestamp(app.paid_at) : "",
+    attendedAt: app.attended_at ? formatTimestamp(app.attended_at) : ""
+  };
+}
+
+// 엑셀(CSV) 칸: 관리자 화면에서 내려받던 파일과 같은 순서·이름
+const CSV_COLUMNS = [
+  ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'],
+  ['payNoticeAt', '입금안내'], ['paidText', '입금확인'], ['attendedText', '출석'], ['classNoticeAt', '교육안내'],
+  ['surveyNoticeAt', '만족도조사'], ['cancelNoticeAt', '폐강안내'], ['dept', '부서'], ['position', '직위'],
+  ['name', '성명'], ['phone', '연락처'], ['email', '이메일'], ['privacy', '개인정보동의']
+];
+// 엑셀에서 수식으로 실행되지 않게(=, +, -, @, 탭, 줄바꿈으로 시작하는 값은 앞에 ' 를 붙임. 앞 공백·전각 기호도 포함)
+function csvCell(value) {
+  let s = String(value === undefined || value === null ? '' : value);
+  if (/^[\s\u3000]*[=+\-@\uFF1D\uFF0B\uFF0D\uFF20]/.test(s) || /^[\t\r\n]/.test(s)) s = "'" + s;
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+function buildCsv(rows) {
+  const apps = rows.map(applicantView).map(a => ({
+    ...a,
+    feeLabel: FEE_TYPE_LABEL[a.feeType] || '미확인',
+    feeText: a.appliedFee === '' ? '' : Number(a.appliedFee).toLocaleString('ko-KR') + '원',
+    paidText: a.paidAt ? '입금완료 ' + a.paidAt : '',
+    attendedText: a.attendedAt ? '출석 ' + a.attendedAt : ''
+  })).sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
+  const lines = [
+    ['No', ...CSV_COLUMNS.map(([, label]) => label)].map(csvCell).join(','),
+    ...apps.map((app, i) => [i + 1, ...CSV_COLUMNS.map(([key]) => app[key])].map(csvCell).join(','))
+  ];
+  return '\uFEFF' + lines.join('\r\n');
+}
 
 exports.handler = async function(event, context) {
   // OPTIONS: Always Allow (CORS)
@@ -577,43 +653,19 @@ exports.handler = async function(event, context) {
         // Netlify-Vary: 주소 뒤에 아무 값이나 붙여(?type=public&x=1) 캐시를 피해 서버·DB를 반복 호출하지 못하게, type 값만 캐시 구분에 쓴다.
         return jsonRes(200, responseData, { 'Cache-Control': 's-maxage=30, stale-while-revalidate=3600', 'Netlify-Vary': 'query=type' });
       } else {
-        // Admin Request: Fetch courses and full applicant list
-        const { data: courses, error } = await dbClient
-          .from('courses')
-          .select('*, education_apply(*)');
-
+        // 관리자 명단: 과정 목록 + 신청자(접속 기록과 한 묶음으로 조회, sql/24). 기록에 실패하면 명단을 돌려주지 않는다.
+        const { data: courses, error } = await dbClient.from('courses').select('*');
         if (error) throw error;
+        const read = await readApplications(dbClient, 'view_list');
+        if (!read.rows) return jsonRes(read.forbidden ? 403 : 503, { result: 'error', msg: read.forbidden ? '권한이 없습니다.' : READ_BLOCKED_MSG });
 
+        const byCourse = {};
+        read.rows.forEach(app => { (byCourse[app.course_id] = byCourse[app.course_id] || []).push(applicantView(app)); });
         const responseData = {};
         courses.forEach(course => {
-          const apps = (course.education_apply || []).map(app => ({
-            id: app.id,
-            timestamp: formatTimestamp(app.created_at),
-            bizName: app.company || "",
-            bizNo: app.biz_no || "",
-            dept: app.dept || "",
-            position: app.position || "",
-            name: app.name || "",
-            phone: app.phone || "",
-            email: app.email || "",
-            privacy: app.agree_privacy ? "Y" : "N",
-            feeType: app.fee_type || "",
-            appliedFee: app.applied_fee ?? "",
-            payNoticeAt: app.pay_notice_sent_at ? formatTimestamp(app.pay_notice_sent_at) : "",
-            cancelNoticeAt: app.cancel_notice_sent_at ? formatTimestamp(app.cancel_notice_sent_at) : "",
-            classNoticeAt: app.class_notice_sent_at ? formatTimestamp(app.class_notice_sent_at) : "",
-            surveyNoticeAt: app.survey_notice_sent_at ? formatTimestamp(app.survey_notice_sent_at) : "",
-            paidAt: app.paid_at ? formatTimestamp(app.paid_at) : "",
-            attendedAt: app.attended_at ? formatTimestamp(app.attended_at) : "",
-            memberType: "",
-            feeStatus: "",
-            councilType: ""
-          }));
-
+          const apps = byCourse[course.id] || [];
           responseData[course.id] = { ...mapCourse(course, apps.length), applicants: apps };
         });
-        const total = courses.reduce((n, c) => n + (c.education_apply || []).length, 0);
-        await logAccess(adminUser, adminRole, 'view_list', `과정 ${courses.length}개, 신청 ${total}건`);
         return jsonRes(200, responseData);
       }
     } catch (err) {
@@ -650,14 +702,18 @@ exports.handler = async function(event, context) {
         return jsonRes(403, { result: 'error', msg: '슈퍼관리자만 할 수 있는 작업입니다.' });
       }
 
-      // 엑셀(CSV) 다운로드 기록. 기록에 실패하면 다운로드하지 않도록 오류를 돌려준다.
-      if (action === 'log_csv') {
+      // 엑셀(CSV) 다운로드: 서버가 파일을 만든다. 등급 확인·접속 기록·조회를 DB 함수가 한 번에 하고(sql/24),
+      // 기록에 실패하면 파일을 만들지 않는다.
+      if (action === 'download_csv') {
         const courseId = str(reqBody.course_id);
-        const count = parseInt(reqBody.count, 10) || 0;
         if (!UUID_RE.test(courseId)) return jsonRes(400, { result: 'error', msg: '잘못된 요청입니다.' });
-        const ok = await logAccess(adminUser, adminRole, 'download_csv', `과정 ${courseId}, ${count}건`);
-        if (!ok) return jsonRes(500, { result: 'error', msg: '다운로드 기록을 남기지 못해 다운로드를 중단했습니다. 잠시 후 다시 시도해주세요.' });
-        return jsonRes(200, { result: 'success' });
+        const read = await readApplications(dbClient, 'download_csv', { courseId });
+        if (!read.rows) return jsonRes(read.forbidden ? 403 : 503, { result: 'error', msg: read.forbidden ? '권한이 없습니다.' : '다운로드 기록을 남기지 못해 다운로드를 중단했습니다. 잠시 후 다시 시도해주세요.' });
+        return {
+          statusCode: 200,
+          headers: { ...CORS_HEADERS, 'Content-Type': 'text/csv; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Disposition': 'attachment; filename="applicants.csv"' },
+          body: buildCsv(read.rows)
+        };
       }
 
       // 신청 여러 건 삭제 (슈퍼관리자만, 한 번에 최대 100건. DB 규칙에서도 확인)
@@ -724,10 +780,10 @@ exports.handler = async function(event, context) {
           return jsonRes(503, { result: 'error', msg: '입금 안내 설정(템플릿·입금계좌)이 아직 없습니다.' });
         }
         const force = str(reqBody.force) === '1';
-        const { data: apps, error: appsError } = await dbClient.from('education_apply')
-          .select('id, name, phone, course_id, fee_type, applied_fee, pay_notice_sent_at').in('id', ids);
-        if (appsError) throw appsError;
-        if (!apps || apps.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 신청을 찾을 수 없습니다.' });
+        const read = await readApplications(dbClient, 'notice_targets', { ids });
+        if (!read.rows) return jsonRes(read.forbidden ? 403 : 503, { result: 'error', msg: read.forbidden ? '권한이 없습니다.' : READ_BLOCKED_MSG });
+        const apps = read.rows;
+        if (apps.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 신청을 찾을 수 없습니다.' });
         const courseIds = [...new Set(apps.map(a => a.course_id))];
         const { data: courses, error: coursesError } = await dbClient.from('courses').select('id, title, date').in('id', courseIds);
         if (coursesError) throw coursesError;
@@ -795,11 +851,10 @@ exports.handler = async function(event, context) {
         if (courseError) throw courseError;
         if (!courses || courses.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 과정을 찾을 수 없습니다.' });
         const c = courses[0];
-        const { data: apps, error: appsError } = await dbClient.from('education_apply')
-          .select(isCancel ? 'id, name, phone, cancel_notice_sent_at' : `id, name, phone, cancel_notice_sent_at, ${sentCol}`)
-          .eq('course_id', courseId).limit(MAX_BULK_DELETE + 1);
-        if (appsError) throw appsError;
-        if (!apps || apps.length === 0) return jsonRes(400, { result: 'error', msg: '이 과정에는 신청자가 없습니다.' });
+        const read = await readApplications(dbClient, 'notice_targets', { courseId });
+        if (!read.rows) return jsonRes(read.forbidden ? 403 : 503, { result: 'error', msg: read.forbidden ? '권한이 없습니다.' : READ_BLOCKED_MSG });
+        const apps = read.rows;
+        if (apps.length === 0) return jsonRes(400, { result: 'error', msg: '이 과정에는 신청자가 없습니다.' });
         if (apps.length > MAX_BULK_DELETE) return jsonRes(400, { result: 'error', msg: `신청자가 ${MAX_BULK_DELETE}명을 넘어 한 번에 보낼 수 없습니다.` });
         if (pickIds && !pickIds.every(id => apps.some(a => a.id === id))) {
           return jsonRes(400, { result: 'error', msg: '고른 신청 중 이 과정의 신청이 아닌 것이 있습니다. 새로고침 후 다시 해주세요.' });

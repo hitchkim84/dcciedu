@@ -84,10 +84,22 @@ SELECT '5.함수', sig,
        CASE
          WHEN NOT prosecdef THEN '참고(권한은 호출자 기준)'
          WHEN config NOT LIKE '%search_path=""%' THEN '확인 필요(search_path 미고정)'
+         WHEN sig = 'admin_read_applications(text,uuid,uuid[])' AND NOT has_function_privilege('anon', oid, 'EXECUTE')
+              THEN '정상(관리자 명단 조회: 함수 안에서 등급·OTP 확인 후 접속 기록과 함께 조회, sql/24)'
          WHEN has_function_privilege('anon', oid, 'EXECUTE') OR has_function_privilege('authenticated', oid, 'EXECUTE') THEN '확인 필요(홈페이지 키로 실행 가능)'
          ELSE '정상'
        END
   FROM fn
+UNION ALL
+-- 5-1. 관리자 로그인 토큰으로 신청자 개인정보 칸을 직접 읽기·고치기 (sql/25 실행 후 모두 '정상'. 직접 읽으면 접속 기록이 남지 않음)
+SELECT '5-1.개인정보칸', 'education_apply.' || c.col,
+       concat_ws(',',
+         CASE WHEN has_column_privilege('authenticated', 'public.education_apply', c.col, 'SELECT') THEN 'SELECT' END,
+         CASE WHEN has_column_privilege('authenticated', 'public.education_apply', c.col, 'UPDATE') THEN 'UPDATE' END),
+       CASE WHEN has_column_privilege('authenticated', 'public.education_apply', c.col, 'SELECT')
+              OR has_column_privilege('authenticated', 'public.education_apply', c.col, 'UPDATE')
+            THEN '확인 필요(기록 없이 직접 조회·수정 가능: sql/25 실행)' ELSE '정상' END
+  FROM unnest(ARRAY['name', 'phone', 'email', 'company', 'biz_no', 'dept', 'position']) AS c(col)
 UNION ALL
 -- 6. 과정 삭제 시 신청자 처리 방식 (r=RESTRICT 정상, c=CASCADE 확인 필요)
 SELECT '6.과정삭제', conname, 'on delete=' || confdeltype::text,

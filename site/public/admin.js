@@ -495,10 +495,7 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
-const APPLICANT_COLUMNS = [
-    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['payNoticeAt', '입금안내'], ['paidText', '입금확인'], ['attendedText', '출석'], ['classNoticeAt', '교육안내'], ['surveyNoticeAt', '만족도조사'], ['cancelNoticeAt', '폐강안내'], ['dept', '부서'],
-    ['position', '직위'], ['name', '성명'], ['phone', '연락처'], ['email', '이메일'], ['privacy', '개인정보동의']
-];
+// 엑셀(CSV) 칸 구성은 서버(proxy.js CSV_COLUMNS)에서 정한다.
 
 // 신청 때 자동 판별한 회원 구분(sql/16)을 화면·엑셀용 글자로
 const FEE_LABELS = { member: '회원사', nonmember: '비회원사' };
@@ -812,33 +809,27 @@ function toggleApplicants(idx, forceOpen) {
 }
 
 // 엑셀 수식으로 해석될 수 있는 값(=, +, -, @ 시작)은 앞에 '를 붙여 글자로 저장
-function csvCell(value) {
-    let s = String(value === undefined || value === null ? '' : value);
-    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
-    return '"' + s.replace(/"/g, '""') + '"';
-}
-
-// 엑셀 다운로드: 서버에 다운로드 기록(접속 기록)을 먼저 남기고, 성공해야 파일을 만든다.
+// 엑셀 다운로드: 서버가 파일을 만든다(sql/24). 서버·DB가 등급 확인과 접속 기록을 한 번에 하고,
+// 기록에 실패하면 파일을 주지 않는다. 엑셀 수식 실행 방지(CSV Formula Injection)도 서버에서 한다.
 async function downloadApplicantsCsv(idx) {
     const item = statusCourses[idx];
     if (!item) return;
-    const apps = sortedApplicants(item);
+    let blob;
     try {
         const res = await fetch(scriptURL + '?type=admin', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + sessionToken },
-            body: new URLSearchParams({ action: 'log_csv', course_id: item.id, count: String(apps.length) })
+            body: new URLSearchParams({ action: 'download_csv', course_id: item.id })
         });
-        const result = await res.json();
-        if (result.result !== 'success') return alert('⛔ 다운로드 실패: ' + result.msg);
+        if (!res.ok || !(res.headers.get('Content-Type') || '').includes('text/csv')) {
+            let msg = '다운로드하지 못했습니다.';
+            try { msg = (await res.json()).msg || msg; } catch (e) { /* JSON이 아닌 응답 */ }
+            return alert('⛔ 다운로드 실패: ' + msg);
+        }
+        blob = await res.blob();
     } catch (err) {
         return alert('서버 연결 실패로 다운로드하지 못했습니다.');
     }
-    const lines = [
-        ['No', ...APPLICANT_COLUMNS.map(([, label]) => label)].map(csvCell).join(','),
-        ...apps.map((app, i) => [i + 1, ...APPLICANT_COLUMNS.map(([key]) => app[key])].map(csvCell).join(','))
-    ];
-    const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     const safeTitle = String(item.title || '과정').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60);
