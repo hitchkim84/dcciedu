@@ -50,6 +50,7 @@
 - 퇴사·이동 시 바로 Delete user. 접속 기록은 SQL Editor에서 `SELECT * FROM admin_access_log ORDER BY created_at DESC LIMIT 100;`로 월 1회 확인한다.
 - 홈페이지 접속 횟수(날짜별 숫자만, `sql/15`): SQL Editor에서 `SELECT to_char(day, 'YYYY-MM') AS 월, sum(visits) AS 접속 FROM daily_visits GROUP BY 1 ORDER BY 1 DESC;`
 - 유입 경로(경로 이름·날짜별 숫자만, `sql/19`): 홍보 링크에 `?from=이름`(영문 소문자·숫자·-·_ 20자 이내, 예: news·mail·kakao·sms·qr)을 붙이면 그 이름으로, 없으면 naver·google·daum·kakaotalk·dcci·korcham·etc·direct로 센다. 검색어·전체 주소·IP는 저장하지 않는다. 조회: `SELECT source AS 경로, sum(visits) AS 접속 FROM daily_visit_sources WHERE day >= (now() AT TIME ZONE 'Asia/Seoul')::date - 6 GROUP BY 1 ORDER BY 2 DESC;`
+- 네이버 검색 노출·검색어 통계: 네이버 서치어드바이저(회사 네이버 계정, 2026-11 등록). 소유 확인 태그는 `index.html`의 `naver-site-verification`(공개 값, 지우지 않음). 사이트맵 `https://dcciedu.co.kr/sitemap.xml`.
 
 ## 계정·소유 구조와 업무 인계 (비밀번호 등 실제 값은 적지 않는다)
 | 구성 | 소유 | 로그인 |
