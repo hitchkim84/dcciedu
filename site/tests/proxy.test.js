@@ -34,6 +34,7 @@ function resetDb() {
   solapiMode = 'ok';
   solapiRequests = [];
   lookupCount = {};
+  accessLogFail = false;
   lastRpcClientKey = null;
   lastLookupClientKey = null;
   viewExists = true;
@@ -124,6 +125,7 @@ function makeQuery(client, table) {
       return { data: [], error: null }; // RLS silently filters UPDATE/DELETE
     }
     if (q.op === 'insert') {
+      if (table === 'admin_access_log' && accessLogFail) return { data: null, error: { message: 'insert failed', code: '23514' } };
       if (table === 'member_companies' && q.rows.some(r => rows.some(x => x.biz_no === r.biz_no))) {
         return { data: null, error: { message: 'duplicate key', code: '23505' } };
       }
@@ -148,6 +150,26 @@ function raise(message) {
 }
 
 let lastRpcParams = null;
+let accessLogFail = false; // 시험용: 접속 기록 저장 실패 상황(표 장애 등)
+
+// sql/24 admin_read_applications 흉내: 등급·OTP 확인 → 조회 → 접속 기록. 기록 실패 시 전체 실패(명단 안 나감)
+function adminReadApplications(client, p) {
+  const role = roleOf(client);
+  const claims = claimsOf((client.headers.Authorization || '').replace('Bearer ', ''));
+  if (!['view_list', 'download_csv', 'notice_targets'].includes(p.p_action)) return { data: null, error: { code: '22023', message: '잘못된 요청입니다.' } };
+  const allowed = (role === 'admin' && claims.aal === 'aal2') || (role === 'staff' && ['view_list', 'download_csv'].includes(p.p_action));
+  if (!allowed) return { data: null, error: { code: '42501', message: '권한이 없습니다.' } };
+  if (p.p_action === 'download_csv' && !p.p_course_id) return { data: null, error: { code: '22023', message: '잘못된 요청입니다.' } };
+  const rows = db.education_apply
+    .filter(a => (!p.p_course_id || a.course_id === p.p_course_id) && (!p.p_ids || p.p_ids.includes(a.id)))
+    .map(a => ({ ...a }));
+  if (accessLogFail) return { data: null, error: { code: '23514', message: 'new row for relation "admin_access_log" violates check constraint' } };
+  db.admin_access_log.push({
+    user_id: role === 'staff' ? 'u3' : 'u1', user_email: role === 'staff' ? 'staff1@staff.dcciedu.co.kr' : '', user_role: role,
+    action: p.p_action, detail: `조회 ${rows.length}건`
+  });
+  return { data: rows, error: null };
+}
 let lastRpcClientKey = null;
 let lastLookupClientKey = null;
 let visitClientKeys = [];
@@ -220,6 +242,7 @@ function createClient(url, key, opts = {}) {
       return { data: null, error: null };
     }
     if (name === 'lookup_my_applications') { lastLookupClientKey = client.key; return lookupMyApplications(params); }
+    if (name === 'admin_read_applications') return adminReadApplications(client, params);
     return raise('unknown rpc');
   };
   client.auth = {
@@ -781,8 +804,9 @@ test('access log records who viewed, downloaded and deleted (via server key only
   seedApps();
   const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
   await call(handler, { type: 'admin', token: STAFF_TOKEN });
-  const csv = await call(handler, { method: 'POST', type: 'admin', token: STAFF_TOKEN, body: A({ action: 'log_csv', course_id: COURSE_ID, count: '3' }) });
+  const csv = await handler({ httpMethod: 'POST', queryStringParameters: { type: 'admin' }, headers: { authorization: `Bearer ${STAFF_TOKEN}` }, body: A({ action: 'download_csv', course_id: COURSE_ID }), isBase64Encoded: false });
   assert.strictEqual(csv.statusCode, 200, csv.body);
+  assert.match(csv.headers['Content-Type'], /text\/csv/);
   await call(handler, { method: 'POST', type: 'admin', token: ADMIN_TOKEN, body: A({ action: 'delete_applications', ids: IDS[0] }) });
   const log = db.admin_access_log;
   assert.deepStrictEqual(log.map(l => [l.user_role, l.action]), [['staff', 'view_list'], ['staff', 'download_csv'], ['admin', 'delete_applications']]);
@@ -791,10 +815,96 @@ test('access log records who viewed, downloaded and deleted (via server key only
 });
 
 test('CSV download is refused when the access log cannot be written', async () => {
-  const handler = loadHandler(); // 서버 키 없음 → 기록 불가
+  seedApps();
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  accessLogFail = true;
+  for (const token of [STAFF_TOKEN, ADMIN_TOKEN]) {
+    const res = await call(handler, { method: 'POST', type: 'admin', token, body: A({ action: 'download_csv', course_id: COURSE_ID }) });
+    assert.strictEqual(res.statusCode, 503);
+    assert.match(res.json.msg, /다운로드/);
+    assert.doesNotMatch(res.body, /시험0|e@e|check constraint|admin_access_log/); // 개인정보·DB 오류 내용 없음
+  }
+  assert.strictEqual(db.admin_access_log.length, 0);
+});
+
+// 보안 점검(2026-11): 접속 기록을 못 남기면 명단도 돌려주지 않는다(기록 없는 개인정보 조회 차단)
+test('applicant list is withheld when the access log cannot be written', async () => {
+  seedApps();
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  accessLogFail = true;
+  for (const token of [STAFF_TOKEN, ADMIN_TOKEN]) {
+    const res = await call(handler, { type: 'admin', token });
+    assert.strictEqual(res.statusCode, 503);
+    assert.match(res.json.msg, /접속 기록/);
+    assert.doesNotMatch(res.body, /시험0|e@e|010-|check constraint|admin_access_log/);
+  }
+  accessLogFail = false;
+  const ok = await call(handler, { type: 'admin', token: STAFF_TOKEN });
+  assert.strictEqual(ok.statusCode, 200);
+  assert.strictEqual(db.admin_access_log.filter(l => l.action === 'view_list').length, 1);
+});
+
+test('alimtalk targets are not read (nothing sent) when the access log cannot be written', async () => {
+  const handler = loadHandler({ ...PAY_ENV, SOLAPI_CLASS_TEMPLATE_ID: 'TPL_CLASS' });
+  const ids = payApps();
+  accessLogFail = true;
+  const cls = await adminPost(handler, { action: 'send_class_notice', course_id: COURSE_ID });
+  assert.strictEqual(cls.statusCode, 503);
+  const pay = await adminPost(handler, { action: 'send_pay_notice', ids: ids.join(',') });
+  assert.strictEqual(pay.statusCode, 503);
+  assert.strictEqual(solapiRequests.length, 0);
+});
+
+test('server-built CSV keeps the columns, Korean BOM and neutralises spreadsheet formulas', async () => {
+  seedApps();
+  db.education_apply.find(a => a.id === IDS[0]).name = '=HYPERLINK("http://evil","x")';
+  db.education_apply.find(a => a.id === IDS[1]).company = ' +SUM(1,2)';
+  db.education_apply.find(a => a.id === IDS[2]).dept = '＠cmd';
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const res = await handler({ httpMethod: 'POST', queryStringParameters: { type: 'admin' }, headers: { authorization: `Bearer ${ADMIN_TOKEN}` }, body: A({ action: 'download_csv', course_id: COURSE_ID }), isBase64Encoded: false });
+  assert.strictEqual(res.statusCode, 200);
+  assert.ok(res.body.startsWith('\uFEFF'));
+  const lines = res.body.slice(1).split('\r\n');
+  assert.strictEqual(lines[0], ['No', '신청일시', '회사명', '사업자번호', '구분', '교육비', '입금안내', '입금확인', '출석', '교육안내', '만족도조사', '폐강안내', '부서', '직위', '성명', '연락처', '이메일', '개인정보동의'].map(x => `"${x}"`).join(','));
+  assert.strictEqual(lines.length, 1 + db.education_apply.filter(a => a.course_id === COURSE_ID).length);
+  assert.ok(res.body.includes(`"'=HYPERLINK(""http://evil"",""x"")"`));
+  assert.ok(res.body.includes(`"' +SUM(1,2)"`));
+  assert.ok(res.body.includes(`"'＠cmd"`));
+  assert.doesNotMatch(res.body, /"[=+@]/); // 수식으로 시작하는 칸 없음
+  const other = await handler({ httpMethod: 'POST', queryStringParameters: { type: 'admin' }, headers: { authorization: `Bearer ${ADMIN_TOKEN}` }, body: A({ action: 'download_csv', course_id: 'x' }), isBase64Encoded: false });
+  assert.strictEqual(other.statusCode, 400);
+});
+
+test('old log_csv action no longer exists and staff cannot call super-admin reads', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
   const res = await call(handler, { method: 'POST', type: 'admin', token: STAFF_TOKEN, body: A({ action: 'log_csv', course_id: COURSE_ID, count: '1' }) });
-  assert.strictEqual(res.statusCode, 500);
-  assert.match(res.json.msg, /다운로드/);
+  assert.strictEqual(res.statusCode, 403);
+  const anon = await call(handler, { method: 'POST', type: 'admin', body: A({ action: 'download_csv', course_id: COURSE_ID }) });
+  assert.strictEqual(anon.statusCode, 401);
+  const aal1 = await call(handler, { method: 'POST', type: 'admin', token: ADMIN_AAL1_TOKEN, body: A({ action: 'download_csv', course_id: COURSE_ID }) });
+  assert.strictEqual(aal1.statusCode, 403);
+  const user = await call(handler, { type: 'admin', token: USER_TOKEN });
+  assert.strictEqual(user.statusCode, 403);
+  assert.strictEqual(db.admin_access_log.length, 0);
+});
+
+test('a service key put in SUPABASE_KEY by mistake is never used or sent to the browser', async () => {
+  const svcJwt = 'h.' + Buffer.from(JSON.stringify({ role: 'service_role' })).toString('base64url') + '.s';
+  for (const bad of [svcJwt, 'sb_secret_abc']) {
+    const handler = loadHandler({ SUPABASE_KEY: bad });
+    const res = await call(handler);
+    assert.strictEqual(res.statusCode, 500);
+    process.env.SUPABASE_KEY = bad;
+    const cfgPath = path.join(__dirname, '..', 'netlify', 'functions', 'config.js');
+    delete require.cache[require.resolve(cfgPath)];
+    const cfg = await require(cfgPath).handler({ httpMethod: 'GET' });
+    assert.strictEqual(JSON.parse(cfg.body).supabaseKey, '');
+  }
+  process.env.SUPABASE_KEY = 'anon';
+  const cfgPath = path.join(__dirname, '..', 'netlify', 'functions', 'config.js');
+  delete require.cache[require.resolve(cfgPath)];
+  const ok = await require(cfgPath).handler({ httpMethod: 'GET' });
+  assert.strictEqual(JSON.parse(ok.body).supabaseKey, 'anon');
 });
 
 // ---- 신청 접수 알림톡 (솔라피) -------------------------------------------

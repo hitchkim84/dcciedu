@@ -49,7 +49,7 @@ BEGIN
   r := pg_temp.as_role('authenticated', staff2, 'WITH x AS (DELETE FROM public.education_apply RETURNING 1) SELECT count(*) FROM x');
   IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 신청 삭제: %', r; END IF;
   r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.education_apply SET status = 'x' RETURNING 1) SELECT count(*) FROM x$q$);
-  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 신청 수정: %', r; END IF;
+  IF r NOT IN ('rows=0', 'error=42501') THEN RAISE EXCEPTION '일반관리자 신청 수정: %', r; END IF;
   r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.courses SET title = 'x' RETURNING 1) SELECT count(*) FROM x$q$);
   IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 과정 수정: %', r; END IF;
   r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (INSERT INTO public.courses (title) VALUES ('s') RETURNING 1) SELECT count(*) FROM x$q$);
@@ -113,7 +113,7 @@ BEGIN
   r := pg_temp.as_role('authenticated', aal1, 'WITH x AS (DELETE FROM public.education_apply RETURNING 1) SELECT count(*) FROM x');
   IF r <> 'rows=0' THEN RAISE EXCEPTION '관리자 aal1 신청 삭제: %', r; END IF;
   r := pg_temp.as_role('authenticated', aal1, $q$WITH x AS (UPDATE public.education_apply SET status = 'x' RETURNING 1) SELECT count(*) FROM x$q$);
-  IF r <> 'rows=0' THEN RAISE EXCEPTION '관리자 aal1 신청 수정: %', r; END IF;
+  IF r NOT IN ('rows=0', 'error=42501') THEN RAISE EXCEPTION '관리자 aal1 신청 수정: %', r; END IF;
   r := pg_temp.as_role('authenticated', aal2, 'TRUNCATE public.education_apply');
   IF r <> 'error=42501' THEN RAISE EXCEPTION '관리자 TRUNCATE: %', r; END IF;
   RAISE NOTICE '신청 직접 등록 불가(관리자 포함), aal1 삭제·수정 0건, TRUNCATE 권한 없음';
@@ -193,6 +193,7 @@ DECLARE
   r text;
   v_type text;
   v_fee int;
+  v_id uuid;
 BEGIN
   -- 명단: 슈퍼관리자(aal2)만 보기·바꾸기
   r := pg_temp.as_role('authenticated', aal2, $q$SELECT public.replace_member_companies(ARRAY['123-45-67890','1112233333','bad','1234567890'])$q$);
@@ -226,32 +227,33 @@ BEGIN
   IF v_type <> 'member' OR v_fee <> 44000 THEN RAISE EXCEPTION '회원사 판별: % %', v_type, v_fee; END IF;
   SELECT fee_type, applied_fee INTO v_type, v_fee FROM public.education_apply WHERE req_id = 'fee-2';
   IF v_type <> 'nonmember' OR v_fee <> 88000 THEN RAISE EXCEPTION '비회원사 판별: % %', v_type, v_fee; END IF;
+  SELECT id INTO v_id FROM public.education_apply WHERE req_id = 'fee-2';
   -- 관리자가 구분 고치기(슈퍼관리자 aal2만), 일반관리자는 불가
-  r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.education_apply SET fee_type = 'member' WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
-  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 구분 변경: %', r; END IF;
-  r := pg_temp.as_role('authenticated', aal2, $q$WITH x AS (UPDATE public.education_apply SET fee_type = 'member', applied_fee = 44000 WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
+  r := pg_temp.as_role('authenticated', staff2, format($q$WITH x AS (UPDATE public.education_apply SET fee_type = 'member' WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
+  IF r NOT IN ('rows=0', 'error=42501') THEN RAISE EXCEPTION '일반관리자 구분 변경: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal2, format($q$WITH x AS (UPDATE public.education_apply SET fee_type = 'member', applied_fee = 44000 WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
   IF r <> 'rows=1' THEN RAISE EXCEPTION '슈퍼관리자 구분 변경: %', r; END IF;
   -- 입금 확인 표시(sql/18): 슈퍼관리자 aal2만, aal1·일반관리자는 불가
-  r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.education_apply SET paid_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
-  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 입금 확인: %', r; END IF;
-  r := pg_temp.as_role('authenticated', aal1, $q$WITH x AS (UPDATE public.education_apply SET paid_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
-  IF r <> 'rows=0' THEN RAISE EXCEPTION '슈퍼관리자 aal1 입금 확인: %', r; END IF;
-  r := pg_temp.as_role('authenticated', aal2, $q$WITH x AS (UPDATE public.education_apply SET paid_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
+  r := pg_temp.as_role('authenticated', staff2, format($q$WITH x AS (UPDATE public.education_apply SET paid_at = now() WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
+  IF r NOT IN ('rows=0', 'error=42501') THEN RAISE EXCEPTION '일반관리자 입금 확인: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal1, format($q$WITH x AS (UPDATE public.education_apply SET paid_at = now() WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
+  IF r NOT IN ('rows=0', 'error=42501') THEN RAISE EXCEPTION '슈퍼관리자 aal1 입금 확인: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal2, format($q$WITH x AS (UPDATE public.education_apply SET paid_at = now() WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
   IF r <> 'rows=1' THEN RAISE EXCEPTION '슈퍼관리자 입금 확인: %', r; END IF;
   IF (SELECT paid_at FROM public.education_apply WHERE req_id = 'fee-2') IS NULL THEN RAISE EXCEPTION '입금 확인 시각 저장 안 됨'; END IF;
   RAISE NOTICE '입금 확인: 슈퍼관리자(OTP)만 표시 가능, 일반관리자·OTP 전 슈퍼관리자는 0건';
   -- 폐강 안내 발송 시각(sql/20): 일반관리자·OTP 전 슈퍼관리자는 바꿀 수 없음(서버는 서비스 키로 기록)
-  r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.education_apply SET cancel_notice_sent_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
-  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 폐강안내 기록: %', r; END IF;
-  r := pg_temp.as_role('authenticated', aal1, $q$WITH x AS (UPDATE public.education_apply SET cancel_notice_sent_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
-  IF r <> 'rows=0' THEN RAISE EXCEPTION '슈퍼관리자 aal1 폐강안내 기록: %', r; END IF;
-  r := pg_temp.as_role('service_role', '{}', $q$WITH x AS (UPDATE public.education_apply SET cancel_notice_sent_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
+  r := pg_temp.as_role('authenticated', staff2, format($q$WITH x AS (UPDATE public.education_apply SET cancel_notice_sent_at = now() WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
+  IF r NOT IN ('rows=0', 'error=42501') THEN RAISE EXCEPTION '일반관리자 폐강안내 기록: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal1, format($q$WITH x AS (UPDATE public.education_apply SET cancel_notice_sent_at = now() WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
+  IF r NOT IN ('rows=0', 'error=42501') THEN RAISE EXCEPTION '슈퍼관리자 aal1 폐강안내 기록: %', r; END IF;
+  r := pg_temp.as_role('service_role', '{}', format($q$WITH x AS (UPDATE public.education_apply SET cancel_notice_sent_at = now() WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
   IF r <> 'rows=1' THEN RAISE EXCEPTION '서버 키 폐강안내 기록: %', r; END IF;
   RAISE NOTICE '폐강 안내 기록: 서버 키만 기록, 일반관리자·OTP 전 슈퍼관리자는 0건';
   -- 교육 안내 발송 시각·준비물(sql/21): 일반관리자·OTP 전 슈퍼관리자는 바꿀 수 없음
-  r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.education_apply SET class_notice_sent_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
-  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 교육안내 기록: %', r; END IF;
-  r := pg_temp.as_role('service_role', '{}', $q$WITH x AS (UPDATE public.education_apply SET class_notice_sent_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
+  r := pg_temp.as_role('authenticated', staff2, format($q$WITH x AS (UPDATE public.education_apply SET class_notice_sent_at = now() WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
+  IF r NOT IN ('rows=0', 'error=42501') THEN RAISE EXCEPTION '일반관리자 교육안내 기록: %', r; END IF;
+  r := pg_temp.as_role('service_role', '{}', format($q$WITH x AS (UPDATE public.education_apply SET class_notice_sent_at = now() WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
   IF r <> 'rows=1' THEN RAISE EXCEPTION '서버 키 교육안내 기록: %', r; END IF;
   r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.courses SET supplies = 'x' RETURNING 1) SELECT count(*) FROM x$q$);
   IF r <> 'rows=0' AND r NOT LIKE 'error%' THEN RAISE EXCEPTION '일반관리자 준비물 수정: %', r; END IF;
@@ -259,20 +261,95 @@ BEGIN
   IF r <> 'rows=1' THEN RAISE EXCEPTION '슈퍼관리자 준비물 수정: %', r; END IF;
   RAISE NOTICE '교육 안내 기록·준비물: 서버 키·슈퍼관리자(OTP)만, 일반관리자는 0건';
   -- 만족도 조사 안내 발송 시각(sql/22): 일반관리자·OTP 전 슈퍼관리자는 바꿀 수 없음
-  r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.education_apply SET survey_notice_sent_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
-  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 만족도조사 기록: %', r; END IF;
-  r := pg_temp.as_role('authenticated', aal1, $q$WITH x AS (UPDATE public.education_apply SET survey_notice_sent_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
-  IF r <> 'rows=0' THEN RAISE EXCEPTION '슈퍼관리자 aal1 만족도조사 기록: %', r; END IF;
-  r := pg_temp.as_role('service_role', '{}', $q$WITH x AS (UPDATE public.education_apply SET survey_notice_sent_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
+  r := pg_temp.as_role('authenticated', staff2, format($q$WITH x AS (UPDATE public.education_apply SET survey_notice_sent_at = now() WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
+  IF r NOT IN ('rows=0', 'error=42501') THEN RAISE EXCEPTION '일반관리자 만족도조사 기록: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal1, format($q$WITH x AS (UPDATE public.education_apply SET survey_notice_sent_at = now() WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
+  IF r NOT IN ('rows=0', 'error=42501') THEN RAISE EXCEPTION '슈퍼관리자 aal1 만족도조사 기록: %', r; END IF;
+  r := pg_temp.as_role('service_role', '{}', format($q$WITH x AS (UPDATE public.education_apply SET survey_notice_sent_at = now() WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
   IF r <> 'rows=1' THEN RAISE EXCEPTION '서버 키 만족도조사 기록: %', r; END IF;
   RAISE NOTICE '만족도 조사 기록: 서버 키만 기록, 일반관리자·OTP 전 슈퍼관리자는 0건';
   -- 출석(sql/23): 슈퍼관리자 aal2만, aal1·일반관리자는 불가
-  r := pg_temp.as_role('authenticated', staff2, $q$WITH x AS (UPDATE public.education_apply SET attended_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
-  IF r <> 'rows=0' THEN RAISE EXCEPTION '일반관리자 출석: %', r; END IF;
-  r := pg_temp.as_role('authenticated', aal1, $q$WITH x AS (UPDATE public.education_apply SET attended_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
-  IF r <> 'rows=0' THEN RAISE EXCEPTION '슈퍼관리자 aal1 출석: %', r; END IF;
-  r := pg_temp.as_role('authenticated', aal2, $q$WITH x AS (UPDATE public.education_apply SET attended_at = now() WHERE req_id = 'fee-2' RETURNING 1) SELECT count(*) FROM x$q$);
+  r := pg_temp.as_role('authenticated', staff2, format($q$WITH x AS (UPDATE public.education_apply SET attended_at = now() WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
+  IF r NOT IN ('rows=0', 'error=42501') THEN RAISE EXCEPTION '일반관리자 출석: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal1, format($q$WITH x AS (UPDATE public.education_apply SET attended_at = now() WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
+  IF r NOT IN ('rows=0', 'error=42501') THEN RAISE EXCEPTION '슈퍼관리자 aal1 출석: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal2, format($q$WITH x AS (UPDATE public.education_apply SET attended_at = now() WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, v_id));
   IF r <> 'rows=1' THEN RAISE EXCEPTION '슈퍼관리자 출석: %', r; END IF;
   RAISE NOTICE '출석: 슈퍼관리자(OTP)만 표시 가능, 일반관리자·OTP 전 슈퍼관리자는 0건';
   RAISE NOTICE '교육비 판별: 사업자번호 없으면 거절, 명단에 있으면 회원사 44,000원·없으면 비회원사 88,000원, 구분 변경은 슈퍼관리자만';
+END $$;
+
+-- 보안 점검(2026-11, sql/24·25): 개인정보는 기록과 한 묶음인 함수로만 읽는다
+DO $$
+DECLARE
+  aal1 text := '{"role":"authenticated","aal":"aal1","sub":"00000000-0000-4000-8000-000000000001","email":"admin@example.com","app_metadata":{"role":"admin"}}';
+  aal2 text := '{"role":"authenticated","aal":"aal2","sub":"00000000-0000-4000-8000-000000000001","email":"admin@example.com","app_metadata":{"role":"admin"}}';
+  usr2 text := '{"role":"authenticated","aal":"aal2","app_metadata":{}}';
+  staff1 text := '{"role":"authenticated","aal":"aal1","sub":"00000000-0000-4000-8000-000000000003","email":"s1@staff.dcciedu.co.kr","app_metadata":{"role":"staff"}}';
+  r text;
+  n_before bigint;
+  n_apps bigint;
+  some_id uuid;
+  some_course uuid;
+BEGIN
+  SELECT count(*) INTO n_apps FROM public.education_apply;
+  SELECT id, course_id INTO some_id, some_course FROM public.education_apply ORDER BY created_at LIMIT 1;
+
+  -- 1) 함수로 명단 보기: 슈퍼관리자(aal2)·일반관리자만, 볼 때마다 기록 1줄
+  SELECT count(*) INTO n_before FROM public.admin_access_log;
+  r := pg_temp.as_role('authenticated', aal2, $q$SELECT count(*) FROM public.admin_read_applications('view_list')$q$);
+  IF r <> 'rows=' || n_apps THEN RAISE EXCEPTION '슈퍼관리자 명단 조회 함수: % (전체 %)', r, n_apps; END IF;
+  r := pg_temp.as_role('authenticated', staff1, $q$SELECT count(*) FROM public.admin_read_applications('view_list')$q$);
+  IF r <> 'rows=' || n_apps THEN RAISE EXCEPTION '일반관리자 명단 조회 함수: %', r; END IF;
+  IF (SELECT count(*) FROM public.admin_access_log) <> n_before + 2 THEN RAISE EXCEPTION '명단 조회 기록이 2줄 남지 않음'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.admin_access_log WHERE action = 'view_list' AND user_role = 'staff' AND user_email = 's1@staff.dcciedu.co.kr') THEN
+    RAISE EXCEPTION '일반관리자 조회 기록(누가)이 남지 않음';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.admin_access_log l JOIN public.education_apply a ON l.detail LIKE '%' || a.name || '%' OR l.detail LIKE '%' || a.phone || '%') THEN
+    RAISE EXCEPTION '접속 기록에 신청자 개인정보가 들어감';
+  END IF;
+  RAISE NOTICE '명단 조회 함수: 슈퍼관리자(aal2)·일반관리자 조회 %건, 조회마다 접속 기록(누가·무엇) 1줄, 개인정보는 기록에 없음', n_apps;
+
+  -- 2) 거절: OTP 전 슈퍼관리자, 등급 없는 사용자, 비로그인, 일반관리자의 알림톡 대상 조회
+  r := pg_temp.as_role('authenticated', aal1, $q$SELECT count(*) FROM public.admin_read_applications('view_list')$q$);
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '슈퍼관리자 aal1 명단 조회 함수: %', r; END IF;
+  r := pg_temp.as_role('authenticated', usr2, $q$SELECT count(*) FROM public.admin_read_applications('view_list')$q$);
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '등급 없는 사용자 명단 조회 함수: %', r; END IF;
+  r := pg_temp.as_role('anon', '{}', $q$SELECT count(*) FROM public.admin_read_applications('view_list')$q$);
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '비로그인 명단 조회 함수: %', r; END IF;
+  r := pg_temp.as_role('authenticated', staff1, format($q$SELECT count(*) FROM public.admin_read_applications('notice_targets', %L::uuid)$q$, some_course));
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '일반관리자 알림톡 대상 조회: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal2, $q$SELECT count(*) FROM public.admin_read_applications('anything')$q$);
+  IF r <> 'error=22023' THEN RAISE EXCEPTION '알 수 없는 조회 동작: %', r; END IF;
+  RAISE NOTICE '명단 조회 함수 거절: OTP 전 슈퍼관리자·등급 없는 사용자·비로그인·일반관리자의 알림톡 대상 조회 모두 권한 없음';
+
+  -- 3) 접속 기록 저장이 실패하면 명단도 나가지 않음(기록 표 장애 흉내: 임시 제약)
+  ALTER TABLE public.admin_access_log ADD CONSTRAINT tmp_block_log CHECK (action <> 'view_list' AND action <> 'download_csv') NOT VALID;
+  SELECT count(*) INTO n_before FROM public.admin_access_log;
+  r := pg_temp.as_role('authenticated', aal2, $q$SELECT count(*) FROM public.admin_read_applications('view_list')$q$);
+  IF r NOT LIKE 'error=%' THEN RAISE EXCEPTION '기록 실패인데 명단이 나감: %', r; END IF;
+  r := pg_temp.as_role('authenticated', staff1, format($q$SELECT count(*) FROM public.admin_read_applications('download_csv', %L::uuid)$q$, some_course));
+  IF r NOT LIKE 'error=%' THEN RAISE EXCEPTION '기록 실패인데 엑셀 명단이 나감: %', r; END IF;
+  IF (SELECT count(*) FROM public.admin_access_log) <> n_before THEN RAISE EXCEPTION '실패한 조회의 기록이 남음'; END IF;
+  ALTER TABLE public.admin_access_log DROP CONSTRAINT tmp_block_log;
+  RAISE NOTICE '접속 기록 실패 시: 명단 보기·엑셀 모두 결과 없이 오류(%)', r;
+
+  -- 4) 직접 조회 차단(sql/25): 관리자 토큰으로도 개인정보 칸은 직접 못 읽고 못 고침
+  r := pg_temp.as_role('authenticated', aal2, 'SELECT count(name) FROM public.education_apply');
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '슈퍼관리자 성명 직접 조회: %', r; END IF;
+  r := pg_temp.as_role('authenticated', staff1, 'SELECT count(phone) FROM public.education_apply');
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '일반관리자 연락처 직접 조회: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal2, 'SELECT count(*) FROM public.education_apply');
+  IF r <> 'rows=' || n_apps THEN RAISE EXCEPTION '슈퍼관리자 신청 건수(개인정보 아닌 칸): %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal2, format($q$WITH x AS (UPDATE public.education_apply SET name = 'x' WHERE id = %L RETURNING 1) SELECT count(*) FROM x$q$, some_id));
+  IF r <> 'error=42501' THEN RAISE EXCEPTION '슈퍼관리자 성명 직접 수정: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal2, format($q$WITH x AS (UPDATE public.education_apply SET paid_at = now() WHERE id = %L RETURNING id) SELECT count(*) FROM x$q$, some_id));
+  IF r <> 'rows=1' THEN RAISE EXCEPTION '슈퍼관리자 입금확인(id 기준) 수정: %', r; END IF;
+  r := pg_temp.as_role('authenticated', aal2, format($q$WITH x AS (UPDATE public.education_apply SET attended_at = NULL, fee_type = fee_type, applied_fee = applied_fee WHERE id = %L RETURNING id) SELECT count(*) FROM x$q$, some_id));
+  IF r <> 'rows=1' THEN RAISE EXCEPTION '슈퍼관리자 출석·구분 수정: %', r; END IF;
+  r := pg_temp.as_role('authenticated', staff1, format($q$WITH x AS (UPDATE public.education_apply SET paid_at = now() WHERE id = %L RETURNING id) SELECT count(*) FROM x$q$, some_id));
+  IF r NOT IN ('rows=0', 'error=42501') THEN RAISE EXCEPTION '일반관리자 입금확인 수정: %', r; END IF;
+  r := pg_temp.as_role('service_role', '{}', 'SELECT count(name) FROM public.education_apply');
+  IF r <> 'rows=' || n_apps THEN RAISE EXCEPTION '서버 키 조회(신청·알림톡 기록용): %', r; END IF;
+  RAISE NOTICE '직접 조회 차단: 관리자 토큰으로 성명·연락처 직접 조회·수정 불가, 건수·입금확인·출석·구분은 기존대로, 서버 키는 영향 없음';
 END $$;
