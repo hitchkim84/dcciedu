@@ -98,6 +98,8 @@ run_sql sql/21_supplies_class_notice.sql
 run_sql sql/21_supplies_class_notice.sql
 run_sql sql/22_survey_notice.sql
 run_sql sql/22_survey_notice.sql
+run_sql sql/23_attendance.sql
+run_sql sql/23_attendance.sql
 
 echo "[적용 후] check_security.sql 판정 (종료일 미입력만 남아야 함)"
 check_report

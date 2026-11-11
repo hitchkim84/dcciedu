@@ -604,6 +604,7 @@ exports.handler = async function(event, context) {
             classNoticeAt: app.class_notice_sent_at ? formatTimestamp(app.class_notice_sent_at) : "",
             surveyNoticeAt: app.survey_notice_sent_at ? formatTimestamp(app.survey_notice_sent_at) : "",
             paidAt: app.paid_at ? formatTimestamp(app.paid_at) : "",
+            attendedAt: app.attended_at ? formatTimestamp(app.attended_at) : "",
             memberType: "",
             feeStatus: "",
             councilType: ""
@@ -697,16 +698,19 @@ exports.handler = async function(event, context) {
       }
 
       // 교육비 입금 확인 표시(슈퍼관리자만). paid=1이면 지금 시각을 남기고, 0이면 지운다(sql/18).
-      if (action === 'set_paid') {
+      // 입금 확인(sql/18)·출석(sql/23) 체크/해제. 슈퍼관리자(OTP)만, DB 규칙(sql/12)에서도 확인한다.
+      if (action === 'set_paid' || action === 'set_attended') {
+        const isPaid = action === 'set_paid';
         const id = str(reqBody.id);
-        const paid = str(reqBody.paid);
-        if (!UUID_RE.test(id) || !['0', '1'].includes(paid)) return jsonRes(400, { result: 'error', msg: '잘못된 요청입니다.' });
-        const paidAt = paid === '1' ? new Date().toISOString() : null;
-        const { data, error } = await dbClient.from('education_apply').update({ paid_at: paidAt }).eq('id', id).select('id');
+        const on = str(isPaid ? reqBody.paid : reqBody.attended);
+        if (!UUID_RE.test(id) || !['0', '1'].includes(on)) return jsonRes(400, { result: 'error', msg: '잘못된 요청입니다.' });
+        const at = on === '1' ? new Date().toISOString() : null;
+        const { data, error } = await dbClient.from('education_apply').update({ [isPaid ? 'paid_at' : 'attended_at']: at }).eq('id', id).select('id');
         if (error) throw error;
         if (!data || data.length === 0) return jsonRes(403, { result: 'error', msg: '권한이 없거나 대상 신청을 찾을 수 없습니다.' });
-        await logAccess(adminUser, adminRole, 'set_paid', `신청 ${id}, ${paid === '1' ? '입금확인' : '확인취소'}`);
-        return jsonRes(200, { result: 'success', paidAt: paidAt ? formatTimestamp(paidAt) : '' });
+        await logAccess(adminUser, adminRole, action, `신청 ${id}, ${isPaid ? (on === '1' ? '입금확인' : '확인취소') : (on === '1' ? '출석' : '출석취소')}`);
+        const t = at ? formatTimestamp(at) : '';
+        return jsonRes(200, isPaid ? { result: 'success', paidAt: t } : { result: 'success', attendedAt: t });
       }
 
       // 교육비 입금 안내 알림톡 보내기(슈퍼관리자만, 한 번에 최대 50건). 이미 보낸 신청은 force=1일 때만 다시 보낸다.

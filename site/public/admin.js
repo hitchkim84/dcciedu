@@ -496,7 +496,7 @@ function escapeHtml(value) {
 }
 
 const APPLICANT_COLUMNS = [
-    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['payNoticeAt', '입금안내'], ['paidText', '입금확인'], ['classNoticeAt', '교육안내'], ['surveyNoticeAt', '만족도조사'], ['cancelNoticeAt', '폐강안내'], ['dept', '부서'],
+    ['timestamp', '신청일시'], ['bizName', '회사명'], ['bizNo', '사업자번호'], ['feeLabel', '구분'], ['feeText', '교육비'], ['payNoticeAt', '입금안내'], ['paidText', '입금확인'], ['attendedText', '출석'], ['classNoticeAt', '교육안내'], ['surveyNoticeAt', '만족도조사'], ['cancelNoticeAt', '폐강안내'], ['dept', '부서'],
     ['position', '직위'], ['name', '성명'], ['phone', '연락처'], ['email', '이메일'], ['privacy', '개인정보동의']
 ];
 
@@ -507,7 +507,8 @@ function sortedApplicants(item) {
         ...a,
         feeLabel: FEE_LABELS[a.feeType] || '미확인',
         feeText: a.appliedFee === '' || a.appliedFee === null || a.appliedFee === undefined ? '' : Number(a.appliedFee).toLocaleString('ko-KR') + '원',
-        paidText: a.paidAt ? '입금완료 ' + a.paidAt : ''
+        paidText: a.paidAt ? '입금완료 ' + a.paidAt : '',
+        attendedText: a.attendedAt ? '출석 ' + a.attendedAt : ''
     })).sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)));
 }
 
@@ -570,15 +571,17 @@ function sendCourseNotice(btn) {
     if (!kind || !item) return;
     let apps = (item.applicants || []).filter(a => btn.dataset.kind === 'cancel' || !a.cancelNoticeAt);
     let picked = null;
+    let pickedBy = '체크한';
     if (kind.selected) {
         picked = [...document.querySelectorAll(`.app-check[data-course="${btn.dataset.idx}"]:checked`)].map(c => c.dataset.id);
-        if (picked.length === 0) return alert(`${kind.label}를 보낼 참석자를 체크해주세요.\n(맨 위 체크박스로 전체 선택 후 불참자만 해제하면 빠릅니다)`);
+        if (picked.length === 0) { picked = apps.filter(a => a.attendedAt).map(a => a.id); pickedBy = '출석한'; }
+        if (picked.length === 0) return alert(`${kind.label}를 보낼 사람이 없습니다.\n'출석' 칸을 체크하거나, 보낼 사람을 왼쪽 체크박스로 골라주세요.`);
         apps = apps.filter(a => picked.includes(a.id));
         if (apps.length === 0) return alert('체크한 신청자는 모두 폐강 안내를 받아 보낼 수 없습니다.');
     }
     if (apps.length === 0) return alert('보낼 신청자가 없습니다.');
     const sentBefore = apps.filter(a => a[kind.key]).length;
-    const who = picked ? `체크한 ${apps.length}명(${apps.map(a => a.name).join(', ')})` : `신청자 ${apps.length}명`;
+    const who = picked ? `${pickedBy} ${apps.length}명(${apps.map(a => a.name).join(', ')})` : `신청자 ${apps.length}명`;
     if (!confirm(`'${item.title}' 과정의 ${who}에게 ${kind.label} 알림톡을 보내시겠습니까?\n\n보낸 뒤에는 되돌릴 수 없습니다.\n${kind.warn}`)) return;
     let force = '0';
     if (sentBefore) {
@@ -630,6 +633,30 @@ function setFeeType(btn) {
             else { alert('⛔ 변경 실패: ' + result.msg); btn.disabled = false; }
         })
         .catch(err => { alert('오류 발생: ' + err); btn.disabled = false; });
+}
+
+// 교육 출석 체크/해제(슈퍼관리자). 체크한 시각이 남는다(sql/23). 당일 여러 명을 빨리 체크하도록 확인 창 없이 바로 저장한다.
+function setAttended(box) {
+    const on = box.checked;
+    box.disabled = true;
+    fetch(scriptURL + '?type=admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Bearer ' + sessionToken },
+        body: new URLSearchParams({ action: 'set_attended', id: box.dataset.id, attended: on ? '1' : '0' })
+    })
+        .then(r => r.json())
+        .then(result => {
+            if (result.result !== 'success') throw new Error(result.msg);
+            box.disabled = false;
+            const label = box.parentElement.querySelector('span');
+            if (label) { label.textContent = on ? '출석' : '-'; label.className = on ? 'text-blue-700 font-bold' : 'text-gray-400'; }
+            const item = statusCourses[Number(box.dataset.idx)];
+            const app = item && (item.applicants || []).find(a => a.id === box.dataset.id);
+            if (app) app.attendedAt = on ? result.attendedAt : '';
+            const counter = document.getElementById('attended-count-' + box.dataset.idx);
+            if (counter && item) counter.textContent = String((item.applicants || []).filter(a => a.attendedAt).length);
+        })
+        .catch(err => { alert('⛔ 출석 저장 실패: ' + err.message); box.checked = !on; box.disabled = false; });
 }
 
 // 교육비 입금 확인 체크/해제(슈퍼관리자). 체크한 시각이 남는다(sql/18).
@@ -704,7 +731,7 @@ function renderApplicantsTable(item, idx) {
     const canEdit = isSuperAdmin();
     const th = (label, cls = '') => `<th class="px-2 py-2 text-left text-xs font-bold text-gray-500 ${cls}">${label}</th>`;
     const head = (canEdit ? `<th class="px-2 py-2 w-8"><input type="checkbox" data-action="check-all" data-idx="${idx}" aria-label="전체 선택"></th>` : '')
-        + th('No', 'w-8') + th('성명') + th('회사') + th('연락처') + th('교육비') + th('입금확인') + th('안내') + (canEdit ? th('', 'w-12') : '');
+        + th('No', 'w-8') + th('성명') + th('회사') + th('연락처') + th('교육비') + th('입금확인') + th('출석') + th('안내') + (canEdit ? th('', 'w-12') : '');
     const rows = apps.map((app, i) => `
         <tr class="border-t align-top odd:bg-white even:bg-gray-50 hover:bg-yellow-50" data-row="${escapeHtml(app.id)}">
             ${canEdit ? `<td class="px-2 py-2"><input type="checkbox" class="app-check" data-course="${idx}" data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}" data-fee="${escapeHtml(app.feeText)}" data-label="${escapeHtml(app.feeLabel)}" data-sent="${escapeHtml(app.payNoticeAt)}" aria-label="${escapeHtml(app.name)} 선택"></td>` : ''}
@@ -717,6 +744,9 @@ function renderApplicantsTable(item, idx) {
                 data-id="${escapeHtml(app.id)}" data-name="${escapeHtml(app.name)}" data-company="${escapeHtml(app.bizName)}"${app.paidAt ? ' checked' : ''}
                 aria-label="${escapeHtml(app.name)} 입금확인"><span class="${app.paidAt ? 'text-green-700 font-bold' : 'text-gray-400'}">${app.paidAt ? '완료' : '미입금'}</span></label>`
                 : `<span class="${app.paidAt ? 'text-green-700 font-bold' : 'text-gray-400'}">${app.paidAt ? '완료' : '미입금'}</span>`}${app.paidAt ? `<div class="text-xs text-gray-400">${escapeHtml(String(app.paidAt).slice(0, 13))}</div>` : ''}</td>
+            <td class="px-2 py-2 text-sm">${canEdit ? `<label class="inline-flex items-center gap-1 cursor-pointer"><input type="checkbox" data-action="set-attended" data-idx="${idx}"
+                data-id="${escapeHtml(app.id)}"${app.attendedAt ? ' checked' : ''} aria-label="${escapeHtml(app.name)} 출석"><span class="${app.attendedAt ? 'text-blue-700 font-bold' : 'text-gray-400'}">${app.attendedAt ? '출석' : '-'}</span></label>`
+                : `<span class="${app.attendedAt ? 'text-blue-700 font-bold' : 'text-gray-400'}">${app.attendedAt ? '출석' : '-'}</span>`}</td>
             <td class="px-2 py-2">${noticeBadges(app)}</td>
             ${canEdit ? `<td class="px-2 py-2 text-right">${rowMenu(app)}</td>` : ''}
         </tr>`).join('');
@@ -740,7 +770,7 @@ function renderApplicantsTable(item, idx) {
             <button type="button" data-action="download-csv" data-idx="${idx}" class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-bold">엑셀(CSV) 다운로드</button>
         </div>`;
     return `
-        <div class="text-sm font-bold text-gray-700 mb-2">신청자 명단 (${apps.length}명 · 입금확인 ${apps.filter(a => a.paidAt).length}명)</div>
+        <div class="text-sm font-bold text-gray-700 mb-2">신청자 명단 (${apps.length}명 · 입금확인 ${apps.filter(a => a.paidAt).length}명 · 출석 <span id="attended-count-${idx}">${apps.filter(a => a.attendedAt).length}</span>명)</div>
         ${toolbar}
         <div class="bg-white border rounded-lg">
             <table class="w-full">
@@ -1196,6 +1226,7 @@ const ACTIONS = {
     'delete-course': el => deleteCourse(el.dataset.id),
     'set-fee-type': el => setFeeType(el),
     'set-paid': el => setPaid(el),
+    'set-attended': el => setAttended(el),
     'send-course-notice': el => sendCourseNotice(el),
     'send-pay-notice': el => sendPayNotice([payItem(el)], el),
     'send-pay-selected': el => sendPayNotice([...document.querySelectorAll(`.app-check[data-course="${el.dataset.idx}"]:checked`)].map(payItem), el),

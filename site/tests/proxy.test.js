@@ -982,6 +982,28 @@ test('fee: admin list shows fee type and fee; super admin can correct the type',
   assert.strictEqual(db.education_apply[0].fee_type, 'member');
 });
 
+test('attended: super admin can mark and unmark attendance; staff cannot; list shows the time', async () => {
+  const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
+  const APP_ID = '33333333-3333-4333-8333-333333333334';
+  db.education_apply[0].id = APP_ID;
+  const on = await adminPost(handler, { action: 'set_attended', id: APP_ID, attended: '1' });
+  assert.strictEqual(on.statusCode, 200);
+  assert.ok(db.education_apply[0].attended_at);
+  assert.ok(!db.education_apply[0].paid_at);
+  assert.ok(db.admin_access_log.some(l => l.action === 'set_attended'));
+  const list = await call(handler, { type: 'admin', token: ADMIN_TOKEN });
+  assert.strictEqual(list.json[FULL_ID].applicants[0].attendedAt, on.json.attendedAt);
+  for (const token of [STAFF_TOKEN, ADMIN_AAL1_TOKEN]) {
+    assert.strictEqual((await adminPost(handler, { action: 'set_attended', id: APP_ID, attended: '0' }, token)).statusCode, 403);
+  }
+  assert.ok(db.education_apply[0].attended_at);
+  assert.strictEqual((await adminPost(handler, { action: 'set_attended', id: APP_ID, attended: 'yes' })).statusCode, 400);
+  assert.strictEqual((await adminPost(handler, { action: 'set_attended', id: 'bad', attended: '1' })).statusCode, 400);
+  const off = await adminPost(handler, { action: 'set_attended', id: APP_ID, attended: '0' });
+  assert.strictEqual(off.statusCode, 200);
+  assert.strictEqual(db.education_apply[0].attended_at, null);
+});
+
 test('paid: super admin can mark and unmark payment; staff cannot; list shows the time', async () => {
   const handler = loadHandler({ SUPABASE_SERVICE_ROLE_KEY: 'service' });
   const APP_ID = '33333333-3333-4333-8333-333333333334';
