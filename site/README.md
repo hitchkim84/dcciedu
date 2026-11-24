@@ -52,7 +52,7 @@
 1. **브랜치 분리**: (현재 운영 배포 브랜치는 `netlify-test`입니다.) GitHub에서 운영용 브랜치와 테스트용 브랜치(dev 또는 staging)를 분리합니다.
 2. **Netlify 연동**: Netlify에서 "Import from GitHub"로 저장소를 연결합니다.
 3. **환경 분리 세팅**: Netlify 대시보드의 Environment variables에서 "Contexts"를 활용하여, Production 환경에는 실제 운영 DB 정보를, Deploy Previews 및 Branch Deploys에는 테스트용 DB 정보를 입력합니다.
-4. **테스트 흐름**: 기능 수정 시 dev 브랜치에 Push하거나 Pull Request를 생성하면 Netlify가 자동으로 임시 주소(Deploy Preview)를 만들어 배포합니다. 이곳에서 테스트 DB로 안전하게 검증을 마친 후 main에 병합(Merge)하여 운영에 반영합니다.
+4. **테스트 흐름**: 기능 수정 시 dev 브랜치에 Push하거나 Pull Request를 생성하면 Netlify가 자동으로 임시 주소(Deploy Preview)를 만들어 배포합니다. 이곳에서 테스트 DB로 안전하게 검증을 마친 후 운영 브랜치 `netlify-test`에 병합(Merge)하여 운영에 반영합니다.
 
 ## 6. 관리자 로그인
 - 관리자 페이지는 이메일·비밀번호 다음에 인증 앱의 6자리 OTP를 입력해 로그인합니다(처음 한 번 QR 등록). 관리자 역할(`app_metadata.role = 'admin'`)이 있는 계정만 들어갈 수 있습니다.
