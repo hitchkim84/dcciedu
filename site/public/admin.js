@@ -1238,11 +1238,11 @@ document.getElementById('mfa-panel').addEventListener('submit', e => { e.prevent
 
 // --- 자리 비움 자동 로그아웃 ---
 // 관리자 화면을 열어 둔 채 조작이 없으면 로그아웃한다(서버에 저장된 재발급 토큰도 폐기).
-// 기본 30분, "이 PC 기억"을 켠 PC는 4시간. 탭을 닫아 두는 시간은 세지 않는다.
+// 기본 30분, "이 PC 기억"을 켠 PC는 10시간(아침에 로그인하면 퇴근 때까지 유지, 2026-11 결정). 탭을 닫아 두는 시간은 세지 않는다.
 // 마지막 조작 시각은 이 탭(sessionStorage)에 적어 두어, 새로고침하거나 브라우저가 탭을 복원해도 이어서 센다.
 // 참고: 이미 발급된 접속 토큰(JWT)은 만료 시각(Supabase 설정 30분)까지 서버에서 유효할 수 있다.
 const IDLE_LIMIT_MS = 30 * 60 * 1000;
-const IDLE_LIMIT_TRUSTED_MS = 4 * 60 * 60 * 1000;
+const IDLE_LIMIT_TRUSTED_MS = 10 * 60 * 60 * 1000;
 const ACTIVITY_KEY = 'dcciedu-admin-last-activity';
 function loadActivity() {
     try {
@@ -1265,7 +1265,7 @@ function checkIdle() {
     const loggedIn = sessionToken || !document.getElementById('mfa-panel').classList.contains('hidden');
     const limit = isTrustedPc() ? IDLE_LIMIT_TRUSTED_MS : IDLE_LIMIT_MS;
     if (!loggedIn || Date.now() - lastActivity < limit) return;
-    const label = isTrustedPc() ? '4시간' : '30분';
+    const label = isTrustedPc() ? '10시간' : '30분';
     lastSaved = 0;
     touchActivity();
     logout().finally(() => alert(`${label} 동안 사용하지 않아 자동으로 로그아웃되었습니다.`));
